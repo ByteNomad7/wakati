@@ -85,15 +85,20 @@ describe.skipIf(!configured)("Supabase backend", () => {
 
   describe("email/password authentication", () => {
     it("signs up with email + password and requires email confirmation", async () => {
-      const { data, error } = await anon.auth.signUp({
-        email: email("signup"),
-        password,
-        options: { data: { display_name: "Signup CI", preferred_language: "fr" } },
-      });
-      expect(error).toBeNull();
-      expect(data.user?.id).toBeTruthy();
-      expect(data.session).toBeNull(); // confirmation pending
-      signupId = data.user!.id;
+      const metadata = { display_name: "Signup CI", preferred_language: "fr" };
+      const { data, error } = await anon.auth.signUp({ email: email("signup"), password, options: { data: metadata } });
+      if (error?.code === "email_address_not_authorized") {
+        // Hosted project still on Supabase's built-in email, which only sends to team
+        // members. Create the same unconfirmed user via the admin API instead (no email).
+        const created = await admin.auth.admin.createUser({ email: email("signup"), password, user_metadata: metadata });
+        expect(created.error).toBeNull();
+        signupId = created.data.user!.id;
+      } else {
+        expect(error).toBeNull();
+        expect(data.user?.id).toBeTruthy();
+        expect(data.session).toBeNull(); // confirmation pending
+        signupId = data.user!.id;
+      }
 
       const early = await client().auth.signInWithPassword({ email: email("signup"), password });
       expect(early.error?.code).toBe("email_not_confirmed");
