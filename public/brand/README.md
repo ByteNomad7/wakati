@@ -10,11 +10,19 @@ export under the **same name** and update the SHA-256 in `tests/brand-tokens.tes
 | `wakati-horizontal.svg` | Header lockup on light backgrounds | Supplied |
 | `wakati-symbol.svg` | Favicon (`src/app/icon.svg` is a byte-identical copy) | Supplied |
 | `wakati-app-icon-1024.png` | App/PWA icon master | Supplied |
-| `wakati-horizontal-reverse.svg` | Lockup for navy backgrounds (footer, hero) | **Needed** – slot in `brandAssets.horizontalReverse` |
-| `wakati-app-icon-maskable-1024.png` | Android adaptive/maskable icon with safe zone | **Needed** |
+| `wakati-horizontal-reverse.svg` | Lockup for navy backgrounds (footer) | Derived (see below) |
+| `wakati-maskable.svg` → `/icons/wakati-maskable-{192,512,1024}.png` | Android adaptive/maskable icon | Derived (see below) |
 | App store icon sets (iOS/Android) | Future native apps | **Needed** |
 
-Derived files (resampled from `wakati-app-icon-1024.png`, no redrawing):
+Derived by `npm run brand:generate` (`scripts/brand/generate-derived-assets.mjs`), never by hand:
+
+- **Reverse horizontal logo:** the approved horizontal SVG with only `#102C46` fills switched
+  to `#FFFFFF`. Paths and orange are untouched, and a test checks this is a pure colour swap.
+- **Maskable icon:** full-bleed navy square with the approved symbol (W in white, as on the
+  official app icon) scaled so all artwork sits within 34% of the centre, inside Android's 40%
+  safe radius. A pixel test checks the PNGs for transparency and safe-zone overflow.
+
+Resampled from `wakati-app-icon-1024.png` (no redrawing):
 `/public/icons/wakati-icon-{32,48,180,192,512}.png`, `src/app/apple-icon.png`,
 `src/app/favicon.ico`.
 

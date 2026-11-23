@@ -6,12 +6,18 @@ Done: repository structure, design system and brand integration, homepage and na
 database-driven categories and locations, English/French localization, database schema with
 RLS foundations, draft legal placeholders, SEO groundwork, tests.
 
+## Phase B preparation (branch `phase-b/supabase-dev-setup`)
+
+Done: `supabase/config.toml`; explicit Data API grants; sign-up profile trigger;
+verification-guard bug fix; integration tests against a real Supabase stack; GitHub Actions
+CI; manual migrate-to-dev workflow; reverse logo and maskable icon. See docs/SUPABASE.md.
+
 ## Phase B – Marketplace (next)
 
 Prerequisites (owner decisions / setup):
 
-- [ ] Create a Supabase project (free tier is enough to start; no paid add-ons), apply
-      `supabase/migrations`, run `supabase/seed.sql`, set env vars (see `.env.example`).
+- [ ] Create the Supabase **development** project and GitHub `development` secrets, then run
+      the migrate workflow (docs/SUPABASE.md).
 - [ ] Choose auth methods: email + password with email confirmation is supported out of the
       box. Phone/SMS OTP needs an SMS provider (paid); do not advertise it until integrated.
 - [ ] Provide a verified neighbourhood list per launch city.
