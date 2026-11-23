@@ -105,8 +105,11 @@ PGlite with a minimal Supabase shim (`tests/support/supabase-shim.sql`).
 
 ## Rendering and performance
 
-- Pages share a prerendered static shell; listing sections stream in behind `<Suspense>`
-  with skeletons. Category, legal and placeholder pages are prerendered for both locales.
+- Pages are prerendered for both locales. Data cached with `cacheLife("minutes")` (latest,
+  featured and search listings) is revalidated in the background: a newly published listing
+  appears on the homepage within about a minute. Phase B listing writes must call
+  `updateTag("listings")` so changes show immediately. Request-specific parts (search
+  parameters) stream in behind `<Suspense>` with skeletons.
 - Search is a plain GET form: it works without JavaScript. Client JS is limited to the
   mobile menu and the language switcher.
 - Images: AVIF/WebP via `next/image`, remote pattern limited to the project's Supabase

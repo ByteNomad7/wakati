@@ -62,6 +62,10 @@ jobs:
           psql "$DB_URL" -tA -c "select count(*) from public.categories" | grep -qx 35
       - name: Integration tests (email/password auth, RLS, storage)
         run: npm run test:integration
+      - name: Seed a smoke-test listing (before building, so prerendering sees live data)
+        env:
+          SMOKE_MARKER: smoke${{ github.run_id }}
+        run: node scripts/ci/app-smoke.mjs seed
       - name: Build the app against the local Supabase
         run: npm run build
       - name: Smoke test the production server with live data
@@ -69,11 +73,14 @@ jobs:
           SMOKE_MARKER: smoke${{ github.run_id }}
           APP_URL: http://localhost:3000
         run: |
-          node scripts/ci/app-smoke.mjs seed
           npx next start -p 3000 > next.log 2>&1 &
           for i in $(seq 1 30); do curl -fsS -o /dev/null http://localhost:3000/en && break; sleep 1; done
           node scripts/ci/app-smoke.mjs check || (tail -n 50 next.log; exit 1)
-          node scripts/ci/app-smoke.mjs cleanup
+      - name: Remove smoke-test data
+        if: always()
+        env:
+          SMOKE_MARKER: smoke${{ github.run_id }}
+        run: node scripts/ci/app-smoke.mjs cleanup || true
       - name: Supabase logs on failure
         if: failure()
         run: docker ps -a && docker logs supabase_auth_wakati --tail 80 || true
