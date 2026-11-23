@@ -1,6 +1,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import sharp from "sharp";
 import { brandAssets, brandColors, contrastPairs, palette } from "@/lib/brand/tokens";
 
 function luminance(hex: string): number {
@@ -57,5 +58,46 @@ describe("official brand assets", () => {
     for (const size of [32, 48, 180, 192, 512]) {
       expect(statSync(`public/icons/wakati-icon-${size}.png`).size).toBeGreaterThan(0);
     }
+    expect(statSync(`public${brandAssets.horizontalReverse.src}`).size).toBeGreaterThan(0);
+    expect(statSync(`public${brandAssets.maskable.src}`).size).toBeGreaterThan(0);
+  });
+});
+
+describe("derived brand assets", () => {
+  const original = readFileSync("public/brand/wakati-horizontal.svg", "utf8");
+  const reverse = readFileSync("public/brand/wakati-horizontal-reverse.svg", "utf8");
+
+  it("reverse logo is the approved logo with only navy fills switched to white", () => {
+    expect(reverse).toBe(original.replaceAll('fill="#102C46"', 'fill="#FFFFFF"'));
+    expect(reverse).not.toContain("#102C46");
+    expect(reverse.match(/#FF7916/g)?.length).toBe(original.match(/#FF7916/g)?.length);
+    const paths = (svg: string) => [...svg.matchAll(/ d="([^"]+)"/g)].map((m) => m[1]);
+    expect(paths(reverse)).toEqual(paths(original));
+  });
+
+  it("maskable icon reuses the approved symbol paths verbatim", () => {
+    const symbol = readFileSync("public/brand/wakati-symbol.svg", "utf8");
+    const maskable = readFileSync("public/brand/wakati-maskable.svg", "utf8");
+    for (const [, d] of symbol.matchAll(/ d="([^"]+)"/g)) expect(maskable).toContain(d);
+  });
+
+  it.each([192, 512, 1024])("maskable %ipx PNG is full-bleed with artwork inside the 80%% safe zone", async (size) => {
+    const { data, info } = await sharp(`public/icons/wakati-maskable-${size}.png`)
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    expect([info.width, info.height]).toEqual([size, size]);
+    const navy = [0x10, 0x2c, 0x46];
+    const safeRadius = 0.4 * size;
+    let outside = 0;
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const i = (y * size + x) * 4;
+        expect(data[i + 3]).toBe(255); // no transparency anywhere
+        const isNavy = Math.abs(data[i] - navy[0]) + Math.abs(data[i + 1] - navy[1]) + Math.abs(data[i + 2] - navy[2]) < 12;
+        if (!isNavy && Math.hypot(x + 0.5 - size / 2, y + 0.5 - size / 2) > safeRadius) outside++;
+      }
+    }
+    expect(outside).toBe(0);
   });
 });

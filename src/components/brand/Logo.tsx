@@ -12,12 +12,18 @@ export function LogoHorizontal({ className, priority }: { className?: string; pr
   );
 }
 
+/** Light-on-dark lockup for navy surfaces (footer, dark sections). */
+export function LogoHorizontalReverse({ className }: { className?: string }) {
+  const { src, width, height } = brandAssets.horizontalReverse;
+  return <Image src={src} width={width} height={height} alt="Wakati" unoptimized className={className} />;
+}
+
 export function LogoSymbol({ className, alt = "" }: { className?: string; alt?: string }) {
   const { src, width, height } = brandAssets.symbol;
   return <Image src={src} width={width} height={height} alt={alt} unoptimized className={className} />;
 }
 
-/** Navy app icon; used on dark surfaces until a reverse horizontal logo is supplied. */
+/** Rounded app icon (official PNG), e.g. for install prompts. */
 export function AppIcon({ className, alt = "Wakati" }: { className?: string; alt?: string }) {
   return <Image src="/icons/wakati-icon-192.png" width={192} height={192} alt={alt} className={className} />;
 }
