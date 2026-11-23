@@ -239,6 +239,29 @@ describe("private data", () => {
     expect(rows[0]?.phone_e164).toBe("+237670000000");
   });
 
+  it("lets users save their own contact details through the API", async () => {
+    // Regression: the verification guard used to read a profiles-only column on
+    // seller_contacts rows, so every user insert failed (caught by the real-Supabase CI job).
+    await as(db, { role: "authenticated", userId: BOB }, async (tx) => {
+      await tx.query(
+        `insert into public.seller_contacts (user_id, phone_e164, share_consent) values ($1, '+237690000002', true)`,
+        [BOB],
+      );
+      await tx.query(`update public.seller_contacts set share_consent = false where user_id = $1`, [BOB]);
+    });
+  });
+
+  it("does not let users mark their phone as verified", async () => {
+    await expect(
+      as(db, { role: "authenticated", userId: BOB }, (tx) =>
+        tx.query(
+          `insert into public.seller_contacts (user_id, phone_e164, phone_verification) values ($1, '+237690000003', 'verified')`,
+          [BOB],
+        ),
+      ),
+    ).rejects.toThrow(/verification status/);
+  });
+
   it("does not let users mark themselves as verified", async () => {
     await expect(
       as(db, { role: "authenticated", userId: ALICE }, (tx) =>
