@@ -60,6 +60,48 @@ afterAll(async () => {
   await db?.close();
 });
 
+describe("sign-up trigger", () => {
+  it("creates a profile and settings row from the sign-up metadata", async () => {
+    const id = "00000000-0000-4000-8000-0000000000f1";
+    await createUser(db, id, "  Ngozi  ", "fr");
+    const { rows } = await db.query<{ display_name: string; preferred_language: string; business_verification: string }>(
+      `select p.display_name, s.preferred_language, p.business_verification
+       from public.profiles p join public.user_settings s on s.user_id = p.id where p.id = $1`,
+      [id],
+    );
+    expect(rows[0]).toEqual({ display_name: "Ngozi", preferred_language: "fr", business_verification: "unverified" });
+  });
+
+  it("never uses the email address as a public name", async () => {
+    const id = "00000000-0000-4000-8000-0000000000f2";
+    await db.query(`insert into auth.users (id, email) values ($1, 'private.person@example.test')`, [id]);
+    const { rows } = await db.query<{ display_name: string }>("select display_name from public.profiles where id = $1", [id]);
+    expect(rows[0].display_name).toBe("Wakati user");
+  });
+});
+
+describe("Data API privileges", () => {
+  it("lets anon read the public listing view without any default grants", async () => {
+    await expect(
+      as(db, { role: "anon" }, (tx) => tx.query("select count(*) from public.public_listing_cards")),
+    ).resolves.toBeDefined();
+  });
+
+  it("denies anon any write privilege on listings", async () => {
+    await expect(
+      as(db, { role: "anon" }, (tx) =>
+        tx.query("insert into public.listings (seller_id, category_id, city_id, slug, title, description) values ($1, $2, $3, 'x', 'Anon listing', 'Twenty characters at least here.')", [ALICE, cars, douala]),
+      ),
+    ).rejects.toThrow(/permission denied/);
+  });
+
+  it("does not let anon call internal helper functions", async () => {
+    await expect(
+      as(db, { role: "anon" }, (tx) => tx.query("select public.is_restricted($1, array['suspended']::public.restriction_kind[])", [ALICE])),
+    ).rejects.toThrow(/permission denied/);
+  });
+});
+
 describe("reference data", () => {
   it("is publicly readable", async () => {
     const counts = await as(db, { role: "anon" }, async (tx) => ({
@@ -176,13 +218,13 @@ describe("private data", () => {
   });
 
   it("never exposes seller contact rows to other users", async () => {
-    const anon = await as(db, { role: "anon" }, async (tx) =>
-      (await tx.query("select * from public.seller_contacts")).rows.length,
-    );
+    // anon has no privilege on the table at all (not even an empty result).
+    await expect(
+      as(db, { role: "anon" }, (tx) => tx.query("select * from public.seller_contacts")),
+    ).rejects.toThrow(/permission denied/);
     const bob = await as(db, { role: "authenticated", userId: BOB }, async (tx) =>
       (await tx.query("select * from public.seller_contacts")).rows.length,
     );
-    expect(anon).toBe(0);
     expect(bob).toBe(0);
   });
 

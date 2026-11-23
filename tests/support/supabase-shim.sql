@@ -7,7 +7,11 @@ create role authenticated nologin;
 create role service_role nologin bypassrls;
 
 create schema auth;
-create table auth.users (id uuid primary key, email text);
+create table auth.users (
+  id uuid primary key,
+  email text,
+  raw_user_meta_data jsonb not null default '{}'::jsonb
+);
 
 create function auth.uid() returns uuid language sql stable as $$
   select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid;
@@ -28,4 +32,8 @@ create function storage.foldername(name text) returns text[] language sql immuta
 $$;
 
 grant usage on schema public, auth, storage to anon, authenticated, service_role;
+
+-- Emulate a project with "auto-expose new tables" OFF: nothing created by the
+-- migrations is reachable by the API roles unless the migrations grant it.
+alter default privileges in schema public revoke execute on functions from public;
 grant execute on function auth.uid() to anon, authenticated, service_role;
