@@ -103,8 +103,8 @@ key. Never commit `.env.local`.
 From GitHub (recommended): **Actions → Apply migrations to Supabase DEVELOPMENT → Run
 workflow**.
 
-1. First run: `dry_run = true`, `include_seed = true`. Check that the log lists the five
-   migrations as pending, and download the schema snapshot artifact if you want it.
+1. First run: `dry_run = true`, `include_seed = true`. Check that the log lists the pending
+   migrations, and download the schema snapshot artifact if you want it.
 2. Second run: `dry_run = false`, `include_seed = true`.
 3. The CI job `Hosted Supabase development project` then runs the integration tests against
    the project on every pull request. You can also re-run the latest CI workflow by hand.
@@ -130,9 +130,11 @@ Rules for every migration:
   fix it with a new, later migration (as `20261124000200_fix_verification_guard.sql` does).
 - **Tested before it reaches a hosted project.** Every PR applies all migrations to PGlite
   and to a real local Supabase stack in CI. Run the migrate workflow as a dry run first.
-- **Grants are explicit.** A new table or function needs explicit `grant`s in its migration;
-  functions are not executable by `anon`/`authenticated` unless granted (see
-  `20261124000100_api_grants_and_signup.sql`).
+- **Grants are explicit.** A new table, sequence or function is **private** until its
+  migration grants access: `20261124000400_revoke_default_api_grants.sql` removed Supabase's
+  automatic grants and changed the default privileges for tables created by migrations. This
+  applies whatever the dashboard's "automatically expose new tables" setting says. PGlite
+  tests run both with and without hosted default grants.
 - **The seed upserts reference data.** Re-running it overwrites category and city names
   with the values in `src/lib/reference`. Once staff edit reference data in the dashboard,
   run the workflow with `include_seed = false`.
@@ -168,6 +170,7 @@ Rollback notes for the current migrations:
 | `20261124000100_api_grants_and_signup` | `drop trigger on_auth_user_created on auth.users;` (the grants can stay: they only allow what RLS permits) |
 | `20261124000200_fix_verification_guard` | Not recommended: the previous body is broken. |
 | `20261124000300_harden_listing_guard` | Re-create the function body and the `owners manage listing images` policy from `20261123000100_foundation` |
+| `20261124000400_revoke_default_api_grants` | Not recommended (it only removes access). If needed: `alter default privileges for role postgres in schema public grant all on tables to anon, authenticated;` |
 
 ## 8. Development vs production
 
@@ -200,8 +203,12 @@ select id, 'admin' from auth.users where email = 'you@example.com';
 The integration tests create users with addresses like
 `wakati.ci+<name>.<run>@example.com` and delete them (and their listings and uploads) at
 the end of each run. They create confirmed users through the admin API, so no email is sent
-for those. The sign-up test calls the public sign-up endpoint once per run. On a hosted
-project still using the built-in email service, which refuses non-team addresses, it falls
-back to creating the same unconfirmed user through the admin API. If a run is cancelled
+for those. Against the hosted project the tests **never send email**: hosted Supabase
+rejects the reserved `example.com` domain, its built-in email allows only 2 messages per hour,
+and that budget is needed for manual testing. The sign-up test there creates the same
+unconfirmed user through the admin API. The public sign-up endpoint (with a real
+confirmation email to the local mail catcher) is tested on every pull request against the
+local Supabase stack (`SUPABASE_TEST_PUBLIC_SIGNUP=1`).
+If a run is cancelled
 midway, leftover `wakati.ci+…@example.com` users can be deleted under Authentication →
 Users.
