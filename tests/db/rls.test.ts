@@ -183,6 +183,61 @@ describe("listings", () => {
     ).rejects.toThrow(/locked by moderation/);
   });
 
+  describe("moderation and ranking integrity (review findings)", () => {
+    const skilled = () => idOf(db, "categories", "skilled-services");
+    const update = (userId: string, id: string, set: string, params: unknown[] = []) =>
+      as(db, { role: "authenticated", userId }, async (tx) => {
+        await tx.query(`update public.listings set ${set} where id = $1`, [id, ...params]);
+        return (await tx.query<{ status: string; published_at: Date | null; expires_at: Date | null }>(
+          "select status, published_at, expires_at from public.listings where id = $1", [id],
+        )).rows[0];
+      });
+
+    it("A: moving a live listing into a review-required category sends it to review", async () => {
+      const id = await seedListing(listing({ category_id: await skilled(), title: "Cleaning services offered" }));
+      const after = await update(ALICE, id, "category_id = $2", [jobs]);
+      expect(after.status).toBe("pending_review");
+    });
+
+    it("B: sellers cannot choose their own publication date", async () => {
+      const id = await seedListing(listing({ title: "Ranking test listing", published_at: new Date("2026-01-01") }));
+      const after = await update(ALICE, id, "published_at = '2030-01-01'");
+      expect(after.published_at?.toISOString()).toBe("2026-01-01T00:00:00.000Z");
+      const row = await insertListing(ALICE, listing({ status: "draft", title: "Draft with a date", published_at: "2030-01-01" }));
+      expect(row.published_at).toBeNull();
+    });
+
+    it("C: sellers cannot change their listing's expiry", async () => {
+      const id = await seedListing(listing({ title: "Expiry test listing", expires_at: new Date("2027-01-01") }));
+      const after = await update(ALICE, id, "expires_at = null");
+      expect(after.expires_at?.toISOString()).toBe("2027-01-01T00:00:00.000Z");
+    });
+
+    it("D: editing an approved listing in a review-required category sends it back to review", async () => {
+      const id = await seedListing(listing({ category_id: jobs, title: "Approved job advert", status: "published" }));
+      const after = await update(ALICE, id, "description = 'Send 50 000 FCFA registration fee by Mobile Money first.'");
+      expect(after.status).toBe("pending_review");
+    });
+
+    it("D: small edits to listings in standard categories stay published", async () => {
+      const id = await seedListing(listing({ title: "Standard edit listing" }));
+      const after = await update(ALICE, id, "price_xaf = 1400000");
+      expect(after.status).toBe("published");
+    });
+
+    it("E: listing images must live in the seller's own storage folder", async () => {
+      const id = await seedListing(listing({ title: "Image path listing" }));
+      await expect(
+        as(db, { role: "authenticated", userId: ALICE }, (tx) =>
+          tx.query("insert into public.listing_images (listing_id, storage_path) values ($1, $2)", [id, `${BOB}/x/photo.webp`]),
+        ),
+      ).rejects.toThrow(/row-level security/);
+      await as(db, { role: "authenticated", userId: ALICE }, (tx) =>
+        tx.query("insert into public.listing_images (listing_id, storage_path) values ($1, $2)", [id, `${ALICE}/${id}/photo.webp`]),
+      );
+    });
+  });
+
   it("lets moderators remove any listing", async () => {
     const id = await seedListing(listing({ title: "Listing to be moderated" }));
     const affected = await as(db, { role: "authenticated", userId: MOD }, async (tx) =>

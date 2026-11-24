@@ -4,7 +4,7 @@
  * hosted development project when its credentials are provided as secrets.
  *
  * Required env (never commit values):
- *   SUPABASE_TEST_URL, SUPABASE_TEST_ANON_KEY, SUPABASE_TEST_SERVICE_ROLE_KEY
+ *   SUPABASE_TEST_URL, SUPABASE_TEST_PUBLISHABLE_KEY, SUPABASE_TEST_SECRET_KEY
  *
  * Every user and listing created here is deleted in afterAll.
  */
@@ -12,8 +12,8 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const url = process.env.SUPABASE_TEST_URL;
-const anonKey = process.env.SUPABASE_TEST_ANON_KEY;
-const serviceKey = process.env.SUPABASE_TEST_SERVICE_ROLE_KEY;
+const anonKey = process.env.SUPABASE_TEST_PUBLISHABLE_KEY;
+const serviceKey = process.env.SUPABASE_TEST_SECRET_KEY;
 const configured = Boolean(url && anonKey && serviceKey);
 
 const runId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -213,6 +213,36 @@ describe.skipIf(!configured)("Supabase backend", () => {
     it("does not let sellers feature their own listing", async () => {
       const { error } = await alice.from("listings").insert(listing({ is_featured: true }));
       expect(error?.message).toMatch(/only staff/);
+    });
+
+    it("sends a live listing back to review when moved into a review-required category", async () => {
+      const { data: skilled } = await anon.from("categories").select("id").eq("slug", "skilled-services").single();
+      const created = await alice
+        .from("listings")
+        .insert(listing({ category_id: skilled!.id, title: `CI services ${runId}` }))
+        .select("id, status, published_at")
+        .single();
+      expect(created.data!.status).toBe("published");
+      const moved = await alice
+        .from("listings")
+        .update({ category_id: ids.jobs, published_at: "2030-01-01T00:00:00Z" })
+        .eq("id", created.data!.id)
+        .select("status, published_at")
+        .single();
+      expect(moved.error).toBeNull();
+      expect(moved.data!.status).toBe("pending_review");
+      expect(moved.data!.published_at).toBe(created.data!.published_at); // date not seller-controlled
+    });
+
+    it("only accepts listing photos stored in the seller's own folder", async () => {
+      const foreign = await alice
+        .from("listing_images")
+        .insert({ listing_id: published, storage_path: `${bobId}/${published}/x.webp` });
+      expect(foreign.error?.code).toBe("42501");
+      const own = await alice
+        .from("listing_images")
+        .insert({ listing_id: published, storage_path: `${aliceId}/${published}/${runId}.webp` });
+      expect(own.error).toBeNull();
     });
 
     it("does not allow anonymous writes", async () => {
