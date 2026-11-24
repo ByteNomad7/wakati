@@ -11,6 +11,11 @@ const publicEnvSchema = z.object({
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string().min(20).optional(),
   NEXT_PUBLIC_SUPPORT_EMAIL: z.email().optional(),
   NEXT_PUBLIC_SHOW_LAYOUT_PLACEHOLDERS: z.enum(["true", "false"]).default("false"),
+  /**
+   * Where this build runs. Only "production" may be indexed by search engines;
+   * everything else (local, CI, Cloudflare development previews) is noindex.
+   */
+  NEXT_PUBLIC_DEPLOYMENT_ENV: z.enum(["local", "development", "production"]).default("local"),
 });
 
 const emptyToUndefined = (v: string | undefined) => (v === undefined || v.trim() === "" ? undefined : v);
@@ -25,6 +30,7 @@ function readPublicEnv() {
       emptyToUndefined(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
     NEXT_PUBLIC_SUPPORT_EMAIL: emptyToUndefined(process.env.NEXT_PUBLIC_SUPPORT_EMAIL),
     NEXT_PUBLIC_SHOW_LAYOUT_PLACEHOLDERS: emptyToUndefined(process.env.NEXT_PUBLIC_SHOW_LAYOUT_PLACEHOLDERS),
+    NEXT_PUBLIC_DEPLOYMENT_ENV: emptyToUndefined(process.env.NEXT_PUBLIC_DEPLOYMENT_ENV),
   });
   if (!parsed.success) {
     throw new Error(`Invalid public environment variables: ${z.prettifyError(parsed.error)}`);
@@ -38,6 +44,13 @@ export const siteUrl = publicEnv.NEXT_PUBLIC_SITE_URL.replace(/\/$/, "");
 
 export function isSupabaseConfigured(): boolean {
   return Boolean(publicEnv.NEXT_PUBLIC_SUPABASE_URL && publicEnv.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
+}
+
+export const deploymentEnv = publicEnv.NEXT_PUBLIC_DEPLOYMENT_ENV;
+
+/** Search engines may index the site only in an explicitly configured production deployment. */
+export function indexingAllowed(): boolean {
+  return deploymentEnv === "production";
 }
 
 /** Layout placeholders are a development aid and can never render in production builds. */

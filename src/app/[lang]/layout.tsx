@@ -5,7 +5,7 @@ import { cacheLife } from "next/cache";
 import { locales } from "@/i18n/config";
 import { getDictionary, getLocale } from "@/i18n/server";
 import { getCatalog } from "@/lib/data/queries";
-import { isSupabaseConfigured, siteUrl } from "@/lib/env";
+import { deploymentEnv, isSupabaseConfigured, siteUrl } from "@/lib/env";
 import { brandColors } from "@/lib/brand/tokens";
 import { SiteHeader } from "@/components/layout/SiteHeader";
 import { SiteFooter } from "@/components/layout/SiteFooter";
@@ -45,6 +45,11 @@ export default async function RootLayout({ children }: LayoutProps<"/[lang]">) {
   return (
     <html lang={locale} className="h-full antialiased">
       <body className="flex min-h-full flex-col">
+        {deploymentEnv === "development" ? (
+          <div role="note" className="bg-orange-500 px-4 py-1 text-center text-xs font-bold text-navy-900">
+            {dict.common.previewBanner}
+          </div>
+        ) : null}
         <SiteHeader
           locale={locale}
           dict={dict}

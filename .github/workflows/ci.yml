@@ -78,6 +78,26 @@ jobs:
           npx next start -p 3000 > next.log 2>&1 &
           for i in $(seq 1 30); do curl -fsS -o /dev/null http://localhost:3000/en && break; sleep 1; done
           node scripts/ci/app-smoke.mjs check || (tail -n 50 next.log; exit 1)
+          node scripts/ci/app-smoke.mjs platform || (tail -n 50 next.log; exit 1)
+          kill %1 || true
+      - name: Build for Cloudflare Workers (OpenNext) as a development preview
+        env:
+          NEXT_PUBLIC_DEPLOYMENT_ENV: development
+        run: |
+          npm run cf:build
+          npx wrangler deploy --dry-run --outdir .wrangler/dry-run | tee wrangler-dry-run.log
+          grep -E "Total Upload" wrangler-dry-run.log
+      - name: Smoke test the Worker in workerd (Cloudflare runtime) with live data
+        env:
+          SMOKE_MARKER: smoke${{ github.run_id }}w
+          APP_URL: http://localhost:8787
+          EXPECT_PREVIEW_BANNER: "1"
+        run: |
+          npx opennextjs-cloudflare preview --port 8787 > worker.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:8787/en && break; sleep 2; done
+          SMOKE_MARKER=smoke${{ github.run_id }} node scripts/ci/app-smoke.mjs check || (tail -n 80 worker.log; exit 1)
+          node scripts/ci/app-smoke.mjs platform || (tail -n 80 worker.log; exit 1)
+          node scripts/ci/app-smoke.mjs cleanup
       - name: Remove smoke-test data
         if: always()
         env:

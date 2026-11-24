@@ -1,0 +1,57 @@
+name: Check Cloudflare development preview
+
+# Manual: verifies a DEPLOYED development preview (main or a branch Preview) end to end:
+# EN/FR pages, noindex, preview banner, Supabase auth callback, and parallel requests.
+# Uses a Cloudflare Access service token, so the preview stays private.
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Preview URL, e.g. https://wakati-dev.<account>.workers.dev (blank = WAKATI_PREVIEW_URL variable)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: development
+    env:
+      APP_URL: ${{ inputs.url || vars.WAKATI_PREVIEW_URL }}
+      SUPABASE_TEST_URL: ${{ secrets.SUPABASE_DEV_URL }}
+      SUPABASE_TEST_SECRET_KEY: ${{ secrets.SUPABASE_DEV_SECRET_KEY }}
+      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+      EXPECT_PREVIEW_BANNER: "1"
+      SMOKE_MARKER: preview${{ github.run_id }}
+    steps:
+      - name: Require configuration
+        run: |
+          [ -n "$APP_URL" ] || { echo "::error::Set the url input or the WAKATI_PREVIEW_URL variable"; exit 1; }
+          case "$APP_URL" in https://*.workers.dev|https://*.workers.dev/) ;; *) echo "::error::Only *.workers.dev development previews may be checked"; exit 1;; esac
+          for v in SUPABASE_TEST_URL SUPABASE_TEST_SECRET_KEY CF_ACCESS_CLIENT_ID CF_ACCESS_CLIENT_SECRET; do
+            [ -n "${!v}" ] || { echo "::error::$v is not set in the 'development' environment"; exit 1; }
+          done
+      - name: Access protection is on (no service token → login or 403)
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL/en")
+          echo "Unauthenticated request → HTTP $code"
+          [ "$code" != "200" ] || { echo "::error::Preview is publicly reachable without Cloudflare Access"; exit 1; }
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Deployment checks
+        run: node scripts/ci/app-smoke.mjs platform
+      - name: Remove test users
+        if: always()
+        run: node scripts/ci/app-smoke.mjs cleanup || true

@@ -165,6 +165,15 @@ const en = {
     body: "This part of Wakati is being built and is not available yet. You can browse categories and search in the meantime.",
     backHome: "Back to the homepage",
   },
+  auth: {
+    confirmedTitle: "Email address confirmed",
+    confirmedBody: "Thank you. Your email address is confirmed and you are signed in.",
+    errorTitle: "This link didn't work",
+    invalidBody: "The link is invalid or has already been used. Please request a new one.",
+    expiredBody: "The link has expired. Links are valid for one hour. Please request a new one.",
+    unavailableBody: "Sign-in is not available right now. Please try again later.",
+    continue: "Continue to Wakati",
+  },
   legal: {
     draftBanner: "Draft – pending legal review",
     draftBody:
@@ -219,6 +228,7 @@ const en = {
   },
   errors: errorMessages.en,
   common: {
+    previewBanner: "Development preview · test data only · not public",
     loading: "Loading…",
     devDataNotice:
       "Development notice: the listing database is not connected (Supabase environment variables are missing). Showing reference data only.",

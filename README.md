@@ -31,6 +31,7 @@ regions, cities) and shows honest empty states. It never shows invented listings
 | `npm test` | Unit, component and database/RLS tests (Vitest + PGlite) |
 | `npm run test:integration` | Tests against a real Supabase stack (needs `SUPABASE_TEST_*` env; run in CI) |
 | `npx supabase start` | Local Supabase stack (Docker) with migrations and seed applied |
+| `npm run cf:build` / `npm run cf:preview` | Build for Cloudflare Workers (OpenNext) / run it locally in workerd |
 | `npm run brand:generate` | Regenerates derived logo/icon variants from the approved artwork |
 | `npm run db:seed:generate` | Regenerates `supabase/seed.sql` from `src/lib/reference` |
 | `npm run check` | All of the above in order |
@@ -45,6 +46,7 @@ migrations and seed applied. The seed only contains reference data.
 
 - [Architecture](docs/ARCHITECTURE.md): stack, structure, i18n, data access, security model
 - [Roadmap](docs/ROADMAP.md): Phase B and C scope and prerequisites
+- [Cloudflare preview](docs/CLOUDFLARE.md): development preview on Workers, Access, previews per branch
 - [Supabase](docs/SUPABASE.md): development project configuration, secrets, verification
 - [Brand assets](public/brand/README.md): official logo files, derived variants and colour rules
 
