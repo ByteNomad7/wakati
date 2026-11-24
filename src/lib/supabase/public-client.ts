@@ -7,7 +7,7 @@ let client: SupabaseClient | null = null;
 /**
  * Anonymous, cookie-less client for public reads (categories, locations,
  * published listings). It has no user session, so row-level security limits it
- * to public data, and it is safe to use inside `"use cache"` scopes.
+ * to public data, and it can be shared across requests.
  */
 export function getPublicSupabase(): SupabaseClient | null {
   if (!isSupabaseConfigured()) return null;

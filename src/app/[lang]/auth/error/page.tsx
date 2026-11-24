@@ -1,4 +1,3 @@
-import { Suspense } from "react";
 import type { Metadata } from "next";
 import { TriangleAlert } from "lucide-react";
 import { getDictionary, getLocale, type Dictionary } from "@/i18n/server";
@@ -21,9 +20,7 @@ export default async function AuthErrorPage({ searchParams }: PageProps<"/[lang]
         <TriangleAlert aria-hidden="true" className="size-7" />
       </span>
       <h1 className="mt-5 text-2xl font-extrabold text-navy-900">{dict.auth.errorTitle}</h1>
-      <Suspense fallback={<p className="mt-2 text-navy-500">{dict.auth.invalidBody}</p>}>
-        <Reason dict={dict} searchParams={searchParams} />
-      </Suspense>
+      <Reason dict={dict} searchParams={searchParams} />
       <ButtonLink href={localePath(locale)} variant="dark" className="mt-8">
         {dict.errors.backHome}
       </ButtonLink>

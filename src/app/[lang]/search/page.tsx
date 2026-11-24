@@ -1,4 +1,3 @@
-import { Suspense } from "react";
 import type { Metadata } from "next";
 import { TriangleAlert } from "lucide-react";
 import { getDictionary, getLocale, type Dictionary } from "@/i18n/server";
@@ -12,8 +11,10 @@ import { parseSearchParams } from "@/lib/search/params";
 import { pageMetadata } from "@/lib/seo/metadata";
 import { SearchForm } from "@/components/search/SearchForm";
 import { SearchResults } from "@/components/listings/SearchResults";
-import { ListingGridSkeleton } from "@/components/listings/ListingStates";
 import { Container } from "@/components/ui/primitives";
+
+/** Rendered per request; results are part of the response, never streamed separately. */
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await getLocale();
@@ -27,9 +28,7 @@ export default async function SearchPage({ searchParams }: PageProps<"/[lang]/se
   const dict = await getDictionary(locale);
   return (
     <Container className="py-8 sm:py-10">
-      <Suspense fallback={<ListingGridSkeleton label={dict.common.loading} />}>
-        <SearchBody locale={locale} dict={dict} searchParams={searchParams} />
-      </Suspense>
+      <SearchBody locale={locale} dict={dict} searchParams={searchParams} />
     </Container>
   );
 }

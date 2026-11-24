@@ -8,7 +8,7 @@ import { isSupabaseConfigured, publicEnv } from "@/lib/env";
  * Handlers. Prepared for Phase B authentication; not used by Phase A pages,
  * which only read public data through `getPublicSupabase()`.
  *
- * Never call this inside a `"use cache"` scope: it reads cookies.
+ * It reads cookies, so it makes the calling route dynamic.
  */
 export async function getServerSupabase() {
   if (!isSupabaseConfigured()) {
