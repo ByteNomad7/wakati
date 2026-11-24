@@ -22,8 +22,8 @@ by **Workers Builds** (Cloudflare's Git integration).
 
 | Option | Verdict |
 | --- | --- |
-| Cloudflare Pages (`@cloudflare/next-on-pages`) | **Not suitable.** It requires the Edge runtime for every route and is no longer the recommended path for Next.js. Wakati uses Next.js 16.4 with Cache Components, `proxy.ts` (Node.js runtime) and Node APIs. |
-| Cloudflare Workers + OpenNext | **Chosen.** Supports Next.js 16 (App Router, SSR, SSG, Route Handlers, `use cache`), with experimental support for `proxy.ts`. Workers Builds gives automatic production deploys plus per-branch Previews with PR comments. |
+| Cloudflare Pages (`@cloudflare/next-on-pages`) | **Not suitable.** It requires the Edge runtime for every route and is no longer the recommended path for Next.js. Wakati uses Next.js 16.4 with `proxy.ts` (Node.js runtime) and Node APIs. |
+| Cloudflare Workers + OpenNext | **Chosen.** Supports Next.js 16 (App Router, SSR, SSG, Route Handlers), with experimental support for `proxy.ts`. Workers Builds gives automatic production deploys plus per-branch Previews. Wakati runs **without Cache Components**, which failed on deployed Workers (section 10). |
 
 What was verified locally in `workerd` (Cloudflare's runtime) before this was written:
 
@@ -37,7 +37,7 @@ What was verified locally in `workerd` (Cloudflare's runtime) before this was wr
 | File | Purpose |
 | --- | --- |
 | `wrangler.jsonc` | Worker `wakati-dev`: assets, R2 cache, Durable Object queue, workers.dev + preview URLs, and a `previews` block for branch Previews |
-| `open-next.config.ts` | OpenNext caching: R2 incremental cache with a regional cache, plus a Durable Object revalidation queue |
+| `open-next.config.ts` | OpenNext caching: R2 incremental cache, plus a Durable Object revalidation queue |
 | `public/_headers` | Long-lived caching for hashed `/_next/static/*` files |
 | `.node-version` | Node 22 for the build image |
 | `package.json` | `cf:build`, `cf:preview` (local workerd), `cf:deploy`, `cf:typegen`; `overrides` (see Known risks) |
@@ -78,13 +78,14 @@ What was verified locally in `workerd` (Cloudflare's runtime) before this was wr
 | Durable Objects (SQLite) | Revalidation queue | Available on Workers Free |
 | Zero Trust / Access | Private previews | Free plan, up to 50 users. Activation may ask for a payment method |
 
-**CPU-time risk.** Measured on the production Node build, warm requests used about **3–8 ms**
-CPU for the homepage and legal pages, and about **19–31 ms** for pages that render
-request-specific content (category, search, auth). The Free plan stops a request after 10 ms
-of CPU, and Cloudflare returns **error 1102**. Expect category and search pages to fail
-intermittently or consistently on the Free plan. The preview check (section 8) detects this.
-If it does, the fix is **Workers Paid (US$5/month)**, which raises the limit to 30 s by
-default. That is your decision; nothing in this repository activates it.
+**CPU-time limit (confirmed on the deployed Preview, see section 10).** Cloudflare's logs
+classified the deployed error 1102 responses as CPU (`exceededCpu`), not memory. Dynamic
+pages (home, category, search, auth) use about 14–22 ms of CPU per request in local
+workerd; the Free plan stops a request after 10 ms. After optimisation, 7% of sustained
+requests on the deployed Preview still failed, mostly on freshly started isolates. The fix
+is **Workers Paid (US$5/month)**, which raises the per-request CPU limit to 30 s by default
+(memory stays 128 MB per isolate on all plans; current use is well below it). That is your
+decision; nothing in this repository activates it.
 
 ## 5. One-time setup (owner)
 
@@ -147,19 +148,48 @@ Do these in order. Nothing here needs a secret to be shared in chat or committed
 
 ### 5.5 Make the preview private (Cloudflare Access)
 
-1. **Zero Trust:** complete the one-time setup if asked (choose the Free plan).
-2. **Workers & Pages → wakati-dev → Settings → Domains & Routes:**
-   - **workers.dev → Enable Cloudflare Access**
-   - **Preview URLs → Enable Cloudflare Access**
-3. **Manage Cloudflare Access** (Zero Trust → Access → Policies). Edit the two policies
-   Cloudflare created (`wakati-dev - Production` and `Cloudflare Workers Preview URLs`):
-   - Include → **Emails** → the addresses of the people who review previews.
-   - Login method: One-time PIN (default).
-4. **Service token for CI:** Zero Trust → Access → Service credentials → **Create service
-   token**, named `wakati-ci`. Copy the Client ID and Client Secret once. Add a policy rule
-   **Action: Service Auth → Include → Service Token → wakati-ci** to both policies.
-5. Check: open the main URL in a private window. You should see the Cloudflare Access login,
-   not Wakati.
+Cloudflare's Worker-level Access interface (introduced August 2026) protects every hostname of
+one Worker with a single setting: the workers.dev URL, branch Preview URLs and any future
+custom domain.
+
+1. **Zero Trust:** complete the one-time setup if asked (choose the **Free** plan, up to 50
+   users).
+2. **Workers & Pages → wakati-dev → Access** tab → **Protect this Worker behind Access**.
+   - Traffic scope: **All traffic** (production and previews). "Previews only" would leave the
+     main development URL public.
+   - Do **not** use the account-wide **Protect all Workers** card for this project (see
+     "Cache population and Access" below).
+3. Policies attached to the Worker (a visitor matching **any** policy is let in):
+
+   | Policy | Action | Include | Purpose |
+   | --- | --- | --- | --- |
+   | `Wakati Authorised Reviewers` | Allow | Emails: the reviewers' addresses; login: One-time PIN | People who review previews |
+   | `Wakati CI Service Access` | Service Auth | Service Token: `wakati-ci` | GitHub Actions preview check |
+   | `Cloudflare account` (created by default) | Allow | Members of the Cloudflare account | Optional; can be removed (see below) |
+
+   Create the service token first: Zero Trust → Access → Service credentials → Service Tokens
+   → `wakati-ci`. Copy the Client ID and Secret once into GitHub (section 5.6).
+4. **Check:** in a private window, `https://wakati-dev.<account>.workers.dev` must show the
+   Cloudflare Access sign-in page, not Wakati.
+
+**Removing the default "Cloudflare account" policy.** This is safe, and it tightens access:
+- Policies are alternatives, so removing one can only reduce who gets in. Future members of the
+  Cloudflare account would otherwise get preview access automatically.
+- No automation uses it. Workers Builds deploys through the Cloudflare API, not the preview URL.
+  The preview check uses the `wakati-ci` service token. OpenNext's cache upload uses its own
+  helper Worker.
+
+Before removing it, make sure every reviewer, including you, is listed in
+`Wakati Authorised Reviewers`. Afterwards, sign in again from a private window to confirm.
+
+**Cache population and Access.** On every deploy and Preview build, OpenNext's
+`populateCache remote` starts a temporary helper Worker at
+`open-next-cache-populate.<account>.workers.dev` and uploads prerendered pages through it. That
+hostname is a different Worker, so Worker-level Access on `wakati-dev` does not affect it. If
+account-wide **Protect all Workers** is ever enabled, these uploads would be blocked and builds
+would fail. In that case, add the `wakati-ci` token to Workers Builds as **build secrets**
+`CLOUDFLARE_ACCESS_CLIENT_ID` and `CLOUDFLARE_ACCESS_CLIENT_SECRET`; OpenNext sends them with
+the uploads.
 
 ### 5.6 GitHub configuration for the preview check
 
@@ -217,24 +247,44 @@ Cloudflare requires a new build (Deployments → Retry build, or push a commit).
 
 ## 8. Verification
 
-After setup, and whenever you want to re-check, run **GitHub → Actions → Check Cloudflare
-development preview → Run workflow**. Leave the URL blank for the main preview, or paste a
-branch Preview URL. The workflow checks:
+**A change that affects the Worker is merged only after its branch Preview passes the
+deployed check.** Local runtimes (`wrangler dev`/workerd, `next start`) do not enforce
+Cloudflare's CPU and memory limits, and the Cache Components failure (section 10) never
+appeared locally.
 
-- **Access:** an unauthenticated request is refused.
-- **Pages and languages:** EN/FR pages load from the live development database, including
-  the locale redirect.
-- **No indexing:** `robots.txt`, the `X-Robots-Tag` header, the robots meta tag, and the
-  preview banner.
-- **Auth callback:** a real confirmation link from Supabase confirms the user and sets the
-  session cookie. A reused link and an expired link are rejected with a localized message,
-  and `next=` cannot redirect off-site.
-- **Concurrency:** 24 parallel requests across pages all complete within 15 s. This catches
-  error 1102 (CPU limit) and the request-hang issue below.
+| Layer | Runs | What it proves |
+| --- | --- | --- |
+| CI `supabase-local` | Every PR | Against a real Supabase stack, in **both** `next start` and workerd: live data, `platform`, `fresh`, `load` (5 rounds) |
+| CI `supabase-dev` | Every PR | 23 integration tests against the hosted development project |
+| **Check Cloudflare development preview** | Manual, required before merging Worker changes | The same checks against the **deployed** Worker, through Access |
+
+Run it from **GitHub → Actions → Check Cloudflare development preview → Run workflow**.
+Choose the PR's branch and paste its Preview URL, or leave the URL blank for the main
+preview. Each step runs even if an earlier one fails, so one run shows every problem:
+
+1. **Access:** an unauthenticated request must be redirected to sign-in.
+2. **`platform`:**
+   - EN/FR home, category, search and legal pages load, with their result sections present;
+   - unknown categories return a real HTTP 404;
+   - live pages are not publicly cacheable;
+   - noindex (robots, header, meta) and the preview banner;
+   - the auth callback (success, reused link, expired link, open-redirect attempt);
+   - 24 parallel requests.
+3. **`load`:** 15 sequential requests to each dynamic page (search, category, paginated
+   category, auth error, home). It fails on any 5xx, error **1102**, or a response missing
+   its result section.
+4. **`fresh`:** a listing created **after** the deployment must appear immediately on
+   home, search and category pages in EN and FR, and must disappear immediately once
+   archived. This replaces "wait for the cache to expire" tests: live pages no longer
+   depend on any cache expiring.
+
+The check creates and deletes its own test users in the development project.
+
+For CPU time and memory over real traffic, see **Workers & Pages → wakati-dev → Metrics**
+and **Observability** (outcomes `exceededCpu`, `exceededMemory`).
 
 Visual review: open the preview on a phone and on a desktop. During setup, layouts at 390,
 820 and 1440 px were checked in workerd with a headless browser (no horizontal overflow).
-The deployed check covers behaviour, not pixels.
 
 ## 9. Known risks and limitations
 
@@ -242,9 +292,122 @@ The deployed check covers behaviour, not pixels.
 | --- | --- | --- |
 | OpenNext marks `proxy.ts` (Node middleware) support as **experimental** | The locale redirect and cookie run through it | Covered by CI smoke tests in workerd on every PR |
 | OpenNext bug: its middleware imported `cookie` v1 in a way that is `undefined` on Workers, so **every request with a cookie returned 500** (including Access's `CF_Authorization` cookie) | Would have broken the whole preview | `package.json` `overrides` gives `@opennextjs/aws` `cookie@0.7.2` (same `parse` API, compatible export). Only that package is affected; Supabase keeps `cookie@1`. Remove it when upstream fixes the import |
-| OpenNext warns "Cache Components are not fully supported on Cloudflare yet" | Pages with streamed request-specific sections (category, search, auth error) log React error #419 in the browser console on Workers only. Content renders correctly, because React re-renders those sections in the browser | Accepted for the development preview; re-check on each OpenNext upgrade |
-| Reported upstream: with Next 16.4 + Cache Components, `use cache` requests can hang on deployed Workers (not reproducible in `wrangler dev`; no fix released at time of writing) | Requests time out | The deployed preview check fires 24 parallel requests with a 15 s timeout. If it fails, report it before relying on the preview |
-| Free plan 10 ms CPU limit | Category/search pages may return error 1102 | See section 4; Workers Paid is an owner decision |
-| Branch Previews skip background revalidation (no self-referencing service binding, so a Preview can never call the main Worker) | Time-revalidated sections on a Preview show data as of that Preview's build or first render | Push a commit to refresh. Phase B's tag-based invalidation (`updateTag`) does not need the queue |
+| Cache Components on deployed Workers (OpenNext #1450; fix #1318 unreleased) | **Confirmed:** homepage HTTP 500 after its prerendered copy expired; streamed search results silently missing | **Resolved by not using Cache Components** (section 10). Revisit only after an OpenNext release fixes it **and** the deployed check passes |
+| Reported upstream: `use cache` request hangs on deployed Workers | Requests time out | No longer applicable (no `use cache`). The parallel-request check stays in place |
+| **Error 1102 on the deployed Worker** (CPU, confirmed) | Dynamic pages intermittently fail on the Free plan's 10 ms CPU limit: 7% of sustained requests after optimisation, mostly on fresh isolates | Measured in section 10. Workers Paid recommended; owner decision, not activated |
+| Branch Previews skip background revalidation (no self-referencing service binding, so a Preview can never call the main Worker) | None today: no page uses time-based revalidation, and live-data pages render per request | Keep in mind if ISR is introduced later |
+| Build log warning: "A DurableObjectNamespace in the config referenced the class DOQueueHandler, but no such Durable Object class is exported" | None for the deployed Worker | Comes from OpenNext's temporary cache-upload helper Worker, which reads `wrangler.jsonc` but has its own entrypoint. The deployed `.open-next/worker.js` exports `DOQueueHandler`, and Wrangler resolves the binding. Reproduced locally with `opennextjs-cloudflare populateCache local` |
+| `npm audit`: 3 moderate (`glob` ≤14.0.1 and `minimatch` <11.0.1, via `@opennextjs/cloudflare`) | Build-time only: used by the OpenNext CLI on our own repository files; none of this code is in the deployed Worker | Do **not** run `npm audit fix --force` (it would downgrade OpenNext to 0.3.0). Upgrade when OpenNext releases a version on `glob` ≥14.0.2 |
 | No Cloudflare Images binding yet | `next/image` optimisation of remote listing photos is not configured | Decided in Phase B together with photo uploads |
-| Unknown-slug pages return HTTP 200 with a 404 page (Phase A limitation) | SEO only | noindex everywhere in development |
+| Unknown-slug pages returned HTTP 200 with a 404 page (Phase A limitation) | SEO only | Fixed by the compatibility refactor: real HTTP 404 |
+
+## 10. Incident: Cache Components on deployed Workers (24 November 2026)
+
+**What happened.** The main development preview passed every check immediately after the
+first deployment. About 40 minutes later:
+
+- `/en` and `/fr` returned **HTTP 500** on every request (12 of 24 parallel requests failed:
+  all of them homepage requests);
+- on the branch Preview, the search page returned 200 **without its results section**
+  ("in Bamenda" heading missing).
+
+Category, search and legal pages otherwise worked. None of this appeared in `wrangler dev`,
+workerd in CI or `next start`.
+
+**Cause.** With Cache Components, the homepage was prerendered and served from the cache
+until its entry expired. After that, each request rendered it live on the Worker, which
+fails on deployed workerd. Request-time sections (Suspense) failed the same way, but
+because they were streamed after HTTP 200 had been sent, the failure showed up as a
+missing section instead of an error. This matches OpenNext issue #1450 (HTTP 500 with Cache
+Components on Workers). The fix, PR #1318 ("run Cache Components staged renders correctly
+on workerd"), was unmerged at the time. OpenNext's build also warns: "Cache Components are
+not fully supported on Cloudflare yet".
+
+**Compatibility refactor (separate PR).** Wakati no longer uses Cache Components:
+
+- `cacheComponents` is off; no `"use cache"`, `cacheLife` or `cacheTag`. The Phase A UI,
+  EN/FR routing (`next/root-params`), Supabase integration, auth, RLS and noindex behaviour
+  are unchanged.
+- **Home, category and search render on every request** with live listings (never cached)
+  and `Cache-Control: private, no-store`.
+- **Reference data** (categories, regions, cities): in-memory cache of 5 minutes per Worker
+  instance, instead of the Next.js data cache.
+- Results render **in the main response** (no Suspense streaming, no route-level
+  `loading.tsx`). A failure is now a visible error, and unknown slugs return a real 404.
+- `data-section` markers let tests confirm each live-data section is present.
+- **Bug found by the new checks:** a results page beyond the last one (e.g.
+  `/en/c/property?page=2`) crashed with PostgREST 416. Before, this was hidden in a
+  streamed section; now it returns an empty page with the real total, covered by an
+  integration test against real Supabase.
+
+**Revised testing strategy.** See section 8. The deployed check is mandatory for Worker
+changes. It includes `load` (repeated dynamic requests: 5xx, 1102 and missing sections) and
+`fresh` (data changed after deployment must show immediately).
+
+**Results on the branch Preview after the refactor.**
+
+| Check | Result |
+| --- | --- |
+| Access, EN/FR pages, sections, 404, noindex, auth callback | Pass |
+| 24 parallel requests | Pass (24/24, about 2 s) |
+| `fresh` (create and archive after deployment) | Pass: new listing visible at once in EN/FR; archived listing gone at once |
+| No HTTP 500, no missing sections | Pass |
+| `load` (15 sequential requests per page), before CPU optimisation | **Fail: error 1102.** Run 1: home 7/15, auth error 4/15. Run 2: home 15/15, auth error 15/15, paginated category 2/15. Search and category always passed |
+
+**Error 1102: cause.** Cloudflare Observability classified the failures as CPU ("Worker
+exceeded CPU time limit", for example `/en?probe=12` to `/en?probe=14` at 13:13:55 CET), not
+memory.
+
+**CPU per request**, measured with the V8 profiler on the built Worker in local workerd (40
+warm requests per page after 5 warm-up requests, ranges over repeated runs). Local timings
+are a guide; the deployed limit is enforced on Cloudflare's hardware.
+
+| Page | Before | After optimisation |
+| --- | --- | --- |
+| `/en/legal/terms` (static, served from R2) | 11.3–12.5 ms | 6.5–8.7 ms |
+| `/en` (home) | 20.6–24.7 ms | 19.3–22.1 ms |
+| `/fr/c/vehicles` (category) | 16.4–16.7 ms | 15.2–17.9 ms |
+| `/en/search?q=a` | 19.7 ms | 17.5–19.6 ms |
+| `/fr/auth/error` (smallest dynamic page) | 16.9–18.2 ms | 14.0–15.5 ms |
+
+Optimisations applied, with no change to functionality or appearance:
+
+- Removed the Cache API "regional cache" wrapper from the R2 incremental cache. The Cache
+  API is not available to Workers behind Cloudflare Access, and its per-request cache write
+  cost about 5 ms of CPU on static pages.
+- The header search form is rendered once and positioned by a responsive grid, instead of
+  a desktop copy and a mobile copy.
+
+Ruled out: the locale proxy (`proxy.ts`; removing it saved nothing), Supabase client
+creation (one shared public client per isolate) and oversized RSC payloads. On a dynamic
+page the CPU goes to React Server Components serialisation (about 4 ms), HTML rendering
+(about 3.5 ms), garbage collection (1–2 ms) and the Next.js and OpenNext request pipeline
+(the rest). Even the smallest dynamic page stays above 10 ms locally, so this is a fixed
+framework cost: trimming our own components cannot bring dynamic pages reliably under
+10 ms.
+
+**Deployed sustained test** (`preview-check`: 15 sequential requests to each of 5 dynamic
+pages per run, on the branch Preview):
+
+| Run | Result |
+| --- | --- |
+| Before optimisation (2 runs) | 43 of 150 requests failed with 1102 (29%) |
+| After, run 1 (first run after the new deployment) | 21 of 75 failed with 1102 (home 7, auth error 8, paginated category 6) |
+| After, runs 2–4 | 225 of 225 passed |
+| After, total | 21 of 300 failed (7%) |
+
+Failures cluster on isolates that have not been warmed yet (just after a deployment or an
+idle period), which is the normal state of a low-traffic site. No run had an HTTP 500 or a
+missing section, and `fresh` passed every time.
+
+**Memory.** Sampled every 10 requests over 600 sequential requests: heap in use ranged from
+32 to 93 MB and fell back to 54 MB after collection; allocated heap reached 126 MB. Memory
+is reclaimed (no leak) and did not cause the 1102 errors. Per-request allocation is high,
+which is why garbage collection costs 1–2 ms per request.
+
+**Conclusion.** Wakati cannot run reliably within the Workers Free 10 ms CPU limit without
+giving up server rendering of live data. **Recommendation: Workers Paid** (US$5/month per
+account, with 10 million requests and 30 million CPU ms included, and a default per-request
+CPU limit of 30 s). At about 20 ms per dynamic request, the included CPU covers about 1.5
+million dynamic page views a month. Upgrading is the owner's decision; nothing in this
+repository activates it.
