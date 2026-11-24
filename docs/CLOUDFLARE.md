@@ -37,7 +37,7 @@ What was verified locally in `workerd` (Cloudflare's runtime) before this was wr
 | File | Purpose |
 | --- | --- |
 | `wrangler.jsonc` | Worker `wakati-dev`: assets, R2 cache, Durable Object queue, workers.dev + preview URLs, and a `previews` block for branch Previews |
-| `open-next.config.ts` | OpenNext caching: R2 incremental cache with a regional cache, plus a Durable Object revalidation queue |
+| `open-next.config.ts` | OpenNext caching: R2 incremental cache, plus a Durable Object revalidation queue |
 | `public/_headers` | Long-lived caching for hashed `/_next/static/*` files |
 | `.node-version` | Node 22 for the build image |
 | `package.json` | `cf:build`, `cf:preview` (local workerd), `cf:deploy`, `cf:typegen`; `overrides` (see Known risks) |
@@ -78,15 +78,14 @@ What was verified locally in `workerd` (Cloudflare's runtime) before this was wr
 | Durable Objects (SQLite) | Revalidation queue | Available on Workers Free |
 | Zero Trust / Access | Private previews | Free plan, up to 50 users. Activation may ask for a payment method |
 
-**Resource limits (confirmed on the deployed Preview, see section 10).** Every Worker
-isolate has **128 MB of memory on both Free and Paid plans**, and 10 ms CPU per request on
-Free. Live-data pages now render on every request. Under repeated requests the deployed
-Worker returns **error 1102 ("Worker exceeded resource limits")** after roughly 40–50
-requests per isolate, until Cloudflare starts a fresh isolate. Cloudflare's logs say which
-limit was hit: Workers & Pages → wakati-dev → Observability → filter by outcome
-`exceededCpu` or `exceededMemory`. That classification decides the fix: Workers Paid
-(US$5/month, owner decision, not activated) raises the CPU limit but **not** the memory
-limit.
+**CPU-time limit (confirmed on the deployed Preview, see section 10).** Cloudflare's logs
+classified the deployed error 1102 responses as CPU (`exceededCpu`), not memory. Dynamic
+pages (home, category, search, auth) use about 14–22 ms of CPU per request in local
+workerd; the Free plan stops a request after 10 ms. After optimisation, 7% of sustained
+requests on the deployed Preview still failed, mostly on freshly started isolates. The fix
+is **Workers Paid (US$5/month)**, which raises the per-request CPU limit to 30 s by default
+(memory stays 128 MB per isolate on all plans; current use is well below it). That is your
+decision; nothing in this repository activates it.
 
 ## 5. One-time setup (owner)
 
@@ -295,7 +294,7 @@ Visual review: open the preview on a phone and on a desktop. During setup, layou
 | OpenNext bug: its middleware imported `cookie` v1 in a way that is `undefined` on Workers, so **every request with a cookie returned 500** (including Access's `CF_Authorization` cookie) | Would have broken the whole preview | `package.json` `overrides` gives `@opennextjs/aws` `cookie@0.7.2` (same `parse` API, compatible export). Only that package is affected; Supabase keeps `cookie@1`. Remove it when upstream fixes the import |
 | Cache Components on deployed Workers (OpenNext #1450; fix #1318 unreleased) | **Confirmed:** homepage HTTP 500 after its prerendered copy expired; streamed search results silently missing | **Resolved by not using Cache Components** (section 10). Revisit only after an OpenNext release fixes it **and** the deployed check passes |
 | Reported upstream: `use cache` request hangs on deployed Workers | Requests time out | No longer applicable (no `use cache`). The parallel-request check stays in place |
-| **Error 1102 on the deployed Worker under repeated requests** (open) | After ~40–50 requests per isolate, requests fail until a new isolate starts | Under investigation; see sections 4 and 10. Blocks merging the compatibility refactor |
+| **Error 1102 on the deployed Worker** (CPU, confirmed) | Dynamic pages intermittently fail on the Free plan's 10 ms CPU limit: 7% of sustained requests after optimisation, mostly on fresh isolates | Measured in section 10. Workers Paid recommended; owner decision, not activated |
 | Branch Previews skip background revalidation (no self-referencing service binding, so a Preview can never call the main Worker) | None today: no page uses time-based revalidation, and live-data pages render per request | Keep in mind if ISR is introduced later |
 | Build log warning: "A DurableObjectNamespace in the config referenced the class DOQueueHandler, but no such Durable Object class is exported" | None for the deployed Worker | Comes from OpenNext's temporary cache-upload helper Worker, which reads `wrangler.jsonc` but has its own entrypoint. The deployed `.open-next/worker.js` exports `DOQueueHandler`, and Wrangler resolves the binding. Reproduced locally with `opennextjs-cloudflare populateCache local` |
 | `npm audit`: 3 moderate (`glob` ≤14.0.1 and `minimatch` <11.0.1, via `@opennextjs/cloudflare`) | Build-time only: used by the OpenNext CLI on our own repository files; none of this code is in the deployed Worker | Do **not** run `npm audit fix --force` (it would downgrade OpenNext to 0.3.0). Upgrade when OpenNext releases a version on `glob` ≥14.0.2 |
@@ -353,13 +352,62 @@ changes. It includes `load` (repeated dynamic requests: 5xx, 1102 and missing se
 | 24 parallel requests | Pass (24/24, about 2 s) |
 | `fresh` (create and archive after deployment) | Pass: new listing visible at once in EN/FR; archived listing gone at once |
 | No HTTP 500, no missing sections | Pass |
-| `load` (15 sequential requests per page) | **Fail: error 1102.** Run 1: home 7/15, auth error 4/15. Run 2: home 15/15, auth error 15/15, paginated category 2/15. Search and category always passed |
+| `load` (15 sequential requests per page), before CPU optimisation | **Fail: error 1102.** Run 1: home 7/15, auth error 4/15. Run 2: home 15/15, auth error 15/15, paginated category 2/15. Search and category always passed |
 
-**Open issue: error 1102.** The failures start after roughly 40–50 requests on one isolate
-and persist until a new isolate starts, rather than tracking page weight. Locally, after
-about 700 requests the Worker's JavaScript heap was 83 MB used / 126 MB allocated before
-garbage collection, and about 30 MB after it. So it is not a persistent leak, but the
-allocated heap approaches the 128 MB isolate limit between collections. Next step:
-classify the failures in Cloudflare Observability (`exceededMemory` or `exceededCpu`),
-then reduce per-request memory/CPU or, for CPU only, consider Workers Paid (owner
-decision).
+**Error 1102: cause.** Cloudflare Observability classified the failures as CPU ("Worker
+exceeded CPU time limit", for example `/en?probe=12` to `/en?probe=14` at 13:13:55 CET), not
+memory.
+
+**CPU per request**, measured with the V8 profiler on the built Worker in local workerd (40
+warm requests per page after 5 warm-up requests, ranges over repeated runs). Local timings
+are a guide; the deployed limit is enforced on Cloudflare's hardware.
+
+| Page | Before | After optimisation |
+| --- | --- | --- |
+| `/en/legal/terms` (static, served from R2) | 11.3–12.5 ms | 6.5–8.7 ms |
+| `/en` (home) | 20.6–24.7 ms | 19.3–22.1 ms |
+| `/fr/c/vehicles` (category) | 16.4–16.7 ms | 15.2–17.9 ms |
+| `/en/search?q=a` | 19.7 ms | 17.5–19.6 ms |
+| `/fr/auth/error` (smallest dynamic page) | 16.9–18.2 ms | 14.0–15.5 ms |
+
+Optimisations applied, with no change to functionality or appearance:
+
+- Removed the Cache API "regional cache" wrapper from the R2 incremental cache. The Cache
+  API is not available to Workers behind Cloudflare Access, and its per-request cache write
+  cost about 5 ms of CPU on static pages.
+- The header search form is rendered once and positioned by a responsive grid, instead of
+  a desktop copy and a mobile copy.
+
+Ruled out: the locale proxy (`proxy.ts`; removing it saved nothing), Supabase client
+creation (one shared public client per isolate) and oversized RSC payloads. On a dynamic
+page the CPU goes to React Server Components serialisation (about 4 ms), HTML rendering
+(about 3.5 ms), garbage collection (1–2 ms) and the Next.js and OpenNext request pipeline
+(the rest). Even the smallest dynamic page stays above 10 ms locally, so this is a fixed
+framework cost: trimming our own components cannot bring dynamic pages reliably under
+10 ms.
+
+**Deployed sustained test** (`preview-check`: 15 sequential requests to each of 5 dynamic
+pages per run, on the branch Preview):
+
+| Run | Result |
+| --- | --- |
+| Before optimisation (2 runs) | 43 of 150 requests failed with 1102 (29%) |
+| After, run 1 (first run after the new deployment) | 21 of 75 failed with 1102 (home 7, auth error 8, paginated category 6) |
+| After, runs 2–4 | 225 of 225 passed |
+| After, total | 21 of 300 failed (7%) |
+
+Failures cluster on isolates that have not been warmed yet (just after a deployment or an
+idle period), which is the normal state of a low-traffic site. No run had an HTTP 500 or a
+missing section, and `fresh` passed every time.
+
+**Memory.** Sampled every 10 requests over 600 sequential requests: heap in use ranged from
+32 to 93 MB and fell back to 54 MB after collection; allocated heap reached 126 MB. Memory
+is reclaimed (no leak) and did not cause the 1102 errors. Per-request allocation is high,
+which is why garbage collection costs 1–2 ms per request.
+
+**Conclusion.** Wakati cannot run reliably within the Workers Free 10 ms CPU limit without
+giving up server rendering of live data. **Recommendation: Workers Paid** (US$5/month per
+account, with 10 million requests and 30 million CPU ms included, and a default per-request
+CPU limit of 30 s). At about 20 ms per dynamic request, the included CPU covers about 1.5
+million dynamic page views a month. Upgrading is the owner's decision; nothing in this
+repository activates it.
