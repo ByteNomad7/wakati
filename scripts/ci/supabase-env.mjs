@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Reads the running LOCAL Supabase stack's URL and keys (`supabase status`) and
+ * Reads the running LOCAL Supabase stack's URL and API keys (`supabase status`) and
  * exports them for later CI steps via $GITHUB_ENV. These are the CLI's local
  * development keys, not project secrets, but they are still masked in logs.
  */
@@ -17,22 +17,24 @@ const env = Object.fromEntries(
 );
 
 const apiUrl = env.API_URL;
-const anonKey = env.ANON_KEY || env.PUBLISHABLE_KEY;
-const serviceKey = env.SERVICE_ROLE_KEY || env.SECRET_KEY;
-if (!apiUrl || !anonKey || !serviceKey) {
-  console.error("Could not read API_URL / ANON_KEY / SERVICE_ROLE_KEY from `supabase status`. Keys found:", Object.keys(env));
+// Prefer the new key types (what hosted projects issue); fall back to legacy JWT keys.
+const publishableKey = env.PUBLISHABLE_KEY || env.ANON_KEY;
+const secretKey = env.SECRET_KEY || env.SERVICE_ROLE_KEY;
+if (!apiUrl || !publishableKey || !secretKey) {
+  console.error("Could not read API_URL / PUBLISHABLE_KEY / SECRET_KEY from `supabase status`. Keys found:", Object.keys(env));
   process.exit(1);
 }
 
 const out = {
   SUPABASE_TEST_URL: apiUrl,
-  SUPABASE_TEST_ANON_KEY: anonKey,
-  SUPABASE_TEST_SERVICE_ROLE_KEY: serviceKey,
+  SUPABASE_TEST_PUBLISHABLE_KEY: publishableKey,
+  SUPABASE_TEST_SECRET_KEY: secretKey,
   NEXT_PUBLIC_SUPABASE_URL: apiUrl,
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: anonKey,
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: publishableKey,
 };
 
-for (const key of [anonKey, serviceKey]) console.log(`::add-mask::${key}`);
+for (const key of [publishableKey, secretKey]) console.log(`::add-mask::${key}`);
+console.log(`Key types: ${publishableKey.startsWith("sb_publishable_") ? "publishable/secret" : "legacy JWT"}`);
 const target = process.env.GITHUB_ENV;
 if (target) {
   appendFileSync(target, Object.entries(out).map(([k, v]) => `${k}=${v}`).join("\n") + "\n");

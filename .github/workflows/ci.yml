@@ -94,13 +94,13 @@ jobs:
     environment: development
     env:
       SUPABASE_TEST_URL: ${{ secrets.SUPABASE_DEV_URL }}
-      SUPABASE_TEST_ANON_KEY: ${{ secrets.SUPABASE_DEV_ANON_KEY }}
-      SUPABASE_TEST_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_DEV_SERVICE_ROLE_KEY }}
+      SUPABASE_TEST_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_DEV_PUBLISHABLE_KEY }}
+      SUPABASE_TEST_SECRET_KEY: ${{ secrets.SUPABASE_DEV_SECRET_KEY }}
     steps:
       - name: Check that the development project is configured
         id: configured
         run: |
-          if [ -n "$SUPABASE_TEST_URL" ] && [ -n "$SUPABASE_TEST_ANON_KEY" ] && [ -n "$SUPABASE_TEST_SERVICE_ROLE_KEY" ]; then
+          if [ -n "$SUPABASE_TEST_URL" ] && [ -n "$SUPABASE_TEST_PUBLISHABLE_KEY" ] && [ -n "$SUPABASE_TEST_SECRET_KEY" ]; then
             echo "ok=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::Hosted dev project secrets are not set; skipping. See docs/SUPABASE.md."

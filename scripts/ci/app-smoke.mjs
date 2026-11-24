@@ -7,19 +7,19 @@
  *   node scripts/ci/app-smoke.mjs check     # fetch pages and assert the listing renders
  *   node scripts/ci/app-smoke.mjs cleanup   # delete the test seller (cascades)
  *
- * Env: SUPABASE_TEST_URL, SUPABASE_TEST_SERVICE_ROLE_KEY, APP_URL (default http://localhost:3000)
+ * Env: SUPABASE_TEST_URL, SUPABASE_TEST_SECRET_KEY, APP_URL (default http://localhost:3000)
  */
 import { createClient } from "@supabase/supabase-js";
 
 const [command] = process.argv.slice(2);
 const url = process.env.SUPABASE_TEST_URL;
-const serviceKey = process.env.SUPABASE_TEST_SERVICE_ROLE_KEY;
+const serviceKey = process.env.SUPABASE_TEST_SECRET_KEY;
 const appUrl = process.env.APP_URL ?? "http://localhost:3000";
 const marker = process.env.SMOKE_MARKER ?? "wakatismoke";
 const email = `wakati.ci+smoke.${marker}@example.com`;
 
 if (!url || !serviceKey) {
-  console.error("SUPABASE_TEST_URL and SUPABASE_TEST_SERVICE_ROLE_KEY are required.");
+  console.error("SUPABASE_TEST_URL and SUPABASE_TEST_SECRET_KEY are required.");
   process.exit(1);
 }
 const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
