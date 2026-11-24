@@ -1,7 +1,8 @@
 name: Check Cloudflare development preview
 
 # Manual: verifies a DEPLOYED development preview (main or a branch Preview) end to end:
-# EN/FR pages, noindex, preview banner, Supabase auth callback, and parallel requests.
+# EN/FR pages, noindex, preview banner, Supabase auth callback, parallel requests, and a
+# CPU-limit probe (sequential requests to dynamic pages; fails on error 1102 or 5xx).
 # Uses a Cloudflare Access service token, so the preview stays private.
 on:
   workflow_dispatch:
@@ -52,6 +53,8 @@ jobs:
       - run: npm ci
       - name: Deployment checks
         run: node scripts/ci/app-smoke.mjs platform
+      - name: CPU-limit probe (Workers Free, 10 ms CPU per request)
+        run: node scripts/ci/app-smoke.mjs load
       - name: Remove test users
         if: always()
         run: node scripts/ci/app-smoke.mjs cleanup || true

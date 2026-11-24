@@ -147,19 +147,48 @@ Do these in order. Nothing here needs a secret to be shared in chat or committed
 
 ### 5.5 Make the preview private (Cloudflare Access)
 
-1. **Zero Trust:** complete the one-time setup if asked (choose the Free plan).
-2. **Workers & Pages → wakati-dev → Settings → Domains & Routes:**
-   - **workers.dev → Enable Cloudflare Access**
-   - **Preview URLs → Enable Cloudflare Access**
-3. **Manage Cloudflare Access** (Zero Trust → Access → Policies). Edit the two policies
-   Cloudflare created (`wakati-dev - Production` and `Cloudflare Workers Preview URLs`):
-   - Include → **Emails** → the addresses of the people who review previews.
-   - Login method: One-time PIN (default).
-4. **Service token for CI:** Zero Trust → Access → Service credentials → **Create service
-   token**, named `wakati-ci`. Copy the Client ID and Client Secret once. Add a policy rule
-   **Action: Service Auth → Include → Service Token → wakati-ci** to both policies.
-5. Check: open the main URL in a private window. You should see the Cloudflare Access login,
-   not Wakati.
+Cloudflare's Worker-level Access interface (introduced August 2026) protects every hostname of
+one Worker with a single setting: the workers.dev URL, branch Preview URLs and any future
+custom domain.
+
+1. **Zero Trust:** complete the one-time setup if asked (choose the **Free** plan, up to 50
+   users).
+2. **Workers & Pages → wakati-dev → Access** tab → **Protect this Worker behind Access**.
+   - Traffic scope: **All traffic** (production and previews). "Previews only" would leave the
+     main development URL public.
+   - Do **not** use the account-wide **Protect all Workers** card for this project (see
+     "Cache population and Access" below).
+3. Policies attached to the Worker (a visitor matching **any** policy is let in):
+
+   | Policy | Action | Include | Purpose |
+   | --- | --- | --- | --- |
+   | `Wakati Authorised Reviewers` | Allow | Emails: the reviewers' addresses; login: One-time PIN | People who review previews |
+   | `Wakati CI Service Access` | Service Auth | Service Token: `wakati-ci` | GitHub Actions preview check |
+   | `Cloudflare account` (created by default) | Allow | Members of the Cloudflare account | Optional; can be removed (see below) |
+
+   Create the service token first: Zero Trust → Access → Service credentials → Service Tokens
+   → `wakati-ci`. Copy the Client ID and Secret once into GitHub (section 5.6).
+4. **Check:** in a private window, `https://wakati-dev.<account>.workers.dev` must show the
+   Cloudflare Access sign-in page, not Wakati.
+
+**Removing the default "Cloudflare account" policy.** This is safe, and it tightens access:
+- Policies are alternatives, so removing one can only reduce who gets in. Future members of the
+  Cloudflare account would otherwise get preview access automatically.
+- No automation uses it. Workers Builds deploys through the Cloudflare API, not the preview URL.
+  The preview check uses the `wakati-ci` service token. OpenNext's cache upload uses its own
+  helper Worker.
+
+Before removing it, make sure every reviewer, including you, is listed in
+`Wakati Authorised Reviewers`. Afterwards, sign in again from a private window to confirm.
+
+**Cache population and Access.** On every deploy and Preview build, OpenNext's
+`populateCache remote` starts a temporary helper Worker at
+`open-next-cache-populate.<account>.workers.dev` and uploads prerendered pages through it. That
+hostname is a different Worker, so Worker-level Access on `wakati-dev` does not affect it. If
+account-wide **Protect all Workers** is ever enabled, these uploads would be blocked and builds
+would fail. In that case, add the `wakati-ci` token to Workers Builds as **build secrets**
+`CLOUDFLARE_ACCESS_CLIENT_ID` and `CLOUDFLARE_ACCESS_CLIENT_SECRET`; OpenNext sends them with
+the uploads.
 
 ### 5.6 GitHub configuration for the preview check
 
@@ -219,9 +248,9 @@ Cloudflare requires a new build (Deployments → Retry build, or push a commit).
 
 After setup, and whenever you want to re-check, run **GitHub → Actions → Check Cloudflare
 development preview → Run workflow**. Leave the URL blank for the main preview, or paste a
-branch Preview URL. The workflow checks:
+branch Preview URL (only `*.workers.dev` URLs are accepted). The workflow checks:
 
-- **Access:** an unauthenticated request is refused.
+- **Access:** an unauthenticated request must not get the app (expects a redirect to sign-in).
 - **Pages and languages:** EN/FR pages load from the live development database, including
   the locale redirect.
 - **No indexing:** `robots.txt`, the `X-Robots-Tag` header, the robots meta tag, and the
@@ -229,8 +258,16 @@ branch Preview URL. The workflow checks:
 - **Auth callback:** a real confirmation link from Supabase confirms the user and sets the
   session cookie. A reused link and an expired link are rejected with a localized message,
   and `next=` cannot redirect off-site.
-- **Concurrency:** 24 parallel requests across pages all complete within 15 s. This catches
-  error 1102 (CPU limit) and the request-hang issue below.
+- **Concurrency:** 24 parallel requests across pages, each within 15 s. This catches the
+  request-hang issue below.
+- **CPU-limit probe:** 15 sequential requests to each dynamic page (search, category,
+  paginated category, auth error) plus the homepage. It fails on any error response,
+  including error 1102 ("Worker exceeded resource limits").
+
+The check creates and deletes its own test users in the development project.
+
+For CPU time over real traffic, see **Workers & Pages → wakati-dev → Metrics** (CPU time
+percentiles, errors) and **Observability → Logs** (filter on outcome `exceededCpu`).
 
 Visual review: open the preview on a phone and on a desktop. During setup, layouts at 390,
 820 and 1440 px were checked in workerd with a headless browser (no horizontal overflow).
@@ -246,5 +283,7 @@ The deployed check covers behaviour, not pixels.
 | Reported upstream: with Next 16.4 + Cache Components, `use cache` requests can hang on deployed Workers (not reproducible in `wrangler dev`; no fix released at time of writing) | Requests time out | The deployed preview check fires 24 parallel requests with a 15 s timeout. If it fails, report it before relying on the preview |
 | Free plan 10 ms CPU limit | Category/search pages may return error 1102 | See section 4; Workers Paid is an owner decision |
 | Branch Previews skip background revalidation (no self-referencing service binding, so a Preview can never call the main Worker) | Time-revalidated sections on a Preview show data as of that Preview's build or first render | Push a commit to refresh. Phase B's tag-based invalidation (`updateTag`) does not need the queue |
+| Build log warning: "A DurableObjectNamespace in the config referenced the class DOQueueHandler, but no such Durable Object class is exported" | None for the deployed Worker | Comes from OpenNext's temporary cache-upload helper Worker, which reads `wrangler.jsonc` but has its own entrypoint. The deployed `.open-next/worker.js` exports `DOQueueHandler`, and Wrangler resolves the binding. Reproduced locally with `opennextjs-cloudflare populateCache local` |
+| `npm audit`: 3 moderate (`glob` ≤14.0.1 and `minimatch` <11.0.1, via `@opennextjs/cloudflare`) | Build-time only: used by the OpenNext CLI on our own repository files; none of this code is in the deployed Worker | Do **not** run `npm audit fix --force` (it would downgrade OpenNext to 0.3.0). Upgrade when OpenNext releases a version on `glob` ≥14.0.2 |
 | No Cloudflare Images binding yet | `next/image` optimisation of remote listing photos is not configured | Decided in Phase B together with photo uploads |
 | Unknown-slug pages return HTTP 200 with a 404 page (Phase A limitation) | SEO only | noindex everywhere in development |
