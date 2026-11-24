@@ -47,8 +47,8 @@ auto-exposed.
 | All OAuth / social providers | Disabled for now |
 | Leaked password protection | Leave off (Pro plan and above only) |
 | Email OTP expiration | 3600 seconds (confirmation links valid for 1 hour, as in local config) |
-| URL Configuration → Site URL | `http://localhost:3000` (dev) |
-| URL Configuration → Redirect URLs | `http://localhost:3000/en/auth/callback`, `http://localhost:3000/fr/auth/callback` (add preview URLs later) |
+| URL Configuration → Site URL | `https://wakati-dev.<account>.workers.dev` (the Cloudflare development preview; see docs/CLOUDFLARE.md) |
+| URL Configuration → Redirect URLs | `http://localhost:3000/*/auth/callback`, `https://wakati-dev.<account>.workers.dev/*/auth/callback`, `https://*-wakati-dev.<account>.workers.dev/*/auth/callback` |
 
 **Email delivery:** Supabase's built-in email service is for testing only. It delivers only
 to members of your Supabase organisation's team, and only **2 emails per hour** across the
