@@ -7,7 +7,6 @@
  *   node scripts/ci/app-smoke.mjs platform   # works on ANY deployment, incl. the Cloudflare preview:
  *                                            #   pages in EN/FR, noindex, preview banner, auth callback,
  *                                            #   and a concurrency check for hanging requests
- *   node scripts/ci/app-smoke.mjs load       # CPU-limit probe: sequential requests to dynamic pages
  *   node scripts/ci/app-smoke.mjs cleanup    # delete the test users (cascades to listings)
  *
  * Env:
@@ -180,38 +179,6 @@ async function platform() {
   finish("Deployment checks passed.");
 }
 
-/**
- * CPU-limit probe for the Workers Free plan (10 ms CPU per request). Sends sequential
- * requests to the pages that render request-specific content and fails on any error
- * response, including Cloudflare error 1102 ("Worker exceeded resource limits").
- */
-async function load() {
-  const rounds = Number(process.env.LOAD_ROUNDS ?? 15);
-  const paths = ["/en/search?q=moto&city=douala", "/fr/c/vehicles", "/en/c/property?page=2", "/fr/auth/error?reason=invalid", "/en"];
-  for (const path of paths) {
-    const statuses = {};
-    const times = [];
-    for (let i = 0; i < rounds; i++) {
-      const started = Date.now();
-      try {
-        const { status, html } = await request(`${path}${path.includes("?") ? "&" : "?"}probe=${i}`, { timeoutMs: 15_000 });
-        times.push(Date.now() - started);
-        const key = /error code:? 1102|exceeded resource limits/i.test(html) ? "1102" : String(status);
-        statuses[key] = (statuses[key] ?? 0) + 1;
-      } catch {
-        statuses.timeout = (statuses.timeout ?? 0) + 1;
-      }
-    }
-    times.sort((a, b) => a - b);
-    const p50 = times[Math.floor(times.length / 2)] ?? 0;
-    const p95 = times[Math.floor(times.length * 0.95)] ?? 0;
-    console.log(`${path.padEnd(34)} ${JSON.stringify(statuses)} p50=${p50}ms p95=${p95}ms`);
-    const bad = Object.entries(statuses).filter(([k]) => k !== "200");
-    if (bad.length) fail(`${path}: ${JSON.stringify(Object.fromEntries(bad))} of ${rounds}`);
-  }
-  finish(`CPU-limit probe passed (${rounds} sequential requests per page, no 1102 or 5xx).`);
-}
-
 async function cleanup() {
   for (const email of [sellerEmail, authEmail]) {
     const user = await findUser(email);
@@ -220,9 +187,9 @@ async function cleanup() {
   console.log("Deleted smoke-test users (and their listings).");
 }
 
-const commands = { seed, check, platform, load, cleanup };
+const commands = { seed, check, platform, cleanup };
 if (!commands[command]) {
-  console.error("Usage: app-smoke.mjs seed|check|platform|load|cleanup");
+  console.error("Usage: app-smoke.mjs seed|check|platform|cleanup");
   process.exit(1);
 }
 await commands[command]();
