@@ -79,6 +79,9 @@ jobs:
           for i in $(seq 1 30); do curl -fsS -o /dev/null http://localhost:3000/en && break; sleep 1; done
           node scripts/ci/app-smoke.mjs check || (tail -n 50 next.log; exit 1)
           node scripts/ci/app-smoke.mjs platform || (tail -n 50 next.log; exit 1)
+          SMOKE_MARKER=smoke${{ github.run_id }}f node scripts/ci/app-smoke.mjs fresh || (tail -n 50 next.log; exit 1)
+          SMOKE_MARKER=smoke${{ github.run_id }}f node scripts/ci/app-smoke.mjs cleanup
+          LOAD_ROUNDS=5 node scripts/ci/app-smoke.mjs load || (tail -n 50 next.log; exit 1)
           kill %1 || true
       - name: Build for Cloudflare Workers (OpenNext) as a development preview
         env:
@@ -97,6 +100,9 @@ jobs:
           for i in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:8787/en && break; sleep 2; done
           SMOKE_MARKER=smoke${{ github.run_id }} node scripts/ci/app-smoke.mjs check || (tail -n 80 worker.log; exit 1)
           node scripts/ci/app-smoke.mjs platform || (tail -n 80 worker.log; exit 1)
+          SMOKE_MARKER=smoke${{ github.run_id }}wf node scripts/ci/app-smoke.mjs fresh || (tail -n 80 worker.log; exit 1)
+          SMOKE_MARKER=smoke${{ github.run_id }}wf node scripts/ci/app-smoke.mjs cleanup
+          LOAD_ROUNDS=5 node scripts/ci/app-smoke.mjs load || (tail -n 80 worker.log; exit 1)
           node scripts/ci/app-smoke.mjs cleanup
       - name: Remove smoke-test data
         if: always()

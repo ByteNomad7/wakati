@@ -29,19 +29,23 @@ export async function SearchResults({
   const t = dict.search;
   const result = await searchListings(query);
 
+  // `data-section` lets deployment checks verify the results are always rendered
+  // (either listings or the empty state), never silently missing.
   if (result.items.length === 0) {
     return (
-      <EmptyState
-        title={empty?.title ?? dict.listings.emptySearchTitle}
-        body={empty?.body ?? dict.listings.emptySearchBody}
-        action={
-          clearHref ? (
-            <Link href={clearHref} className={buttonClasses("secondary")}>
-              {dict.listings.clearFilters}
-            </Link>
-          ) : null
-        }
-      />
+      <div data-section="listing-results" data-count="0">
+        <EmptyState
+          title={empty?.title ?? dict.listings.emptySearchTitle}
+          body={empty?.body ?? dict.listings.emptySearchBody}
+          action={
+            clearHref ? (
+              <Link href={clearHref} className={buttonClasses("secondary")}>
+                {dict.listings.clearFilters}
+              </Link>
+            ) : null
+          }
+        />
+      </div>
     );
   }
 
@@ -49,7 +53,7 @@ export async function SearchResults({
     `${localePath(locale, basePath)}${toSearchString({ ...query, category: basePath === routes.search ? query.category : undefined, page })}`;
 
   return (
-    <div>
+    <div data-section="listing-results" data-count={result.total}>
       <p className="mb-4 text-sm font-semibold text-navy-500" aria-live="polite">
         {result.total === 1 ? t.resultCountOne : interpolate(t.resultCount, { count: result.total })}
       </p>

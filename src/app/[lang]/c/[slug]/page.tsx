@@ -1,4 +1,3 @@
-import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -13,15 +12,14 @@ import { parseSearchParams } from "@/lib/search/params";
 import { pageMetadata } from "@/lib/seo/metadata";
 import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
 import { SearchResults } from "@/components/listings/SearchResults";
-import { ListingGridSkeleton } from "@/components/listings/ListingStates";
 import { CategoryIcon } from "@/components/ui/category-icon";
 import { Container } from "@/components/ui/primitives";
 
-/** One page per category in the database (no pages for empty city × category combinations). */
-export async function generateStaticParams() {
-  const { categories } = await getCatalog();
-  return categories.map((c) => ({ slug: c.slug }));
-}
+/**
+ * Rendered per request: listings are always current, and an unknown category slug
+ * returns a real HTTP 404. Category URLs come from the database (no static list).
+ */
+export const dynamic = "force-dynamic";
 
 async function resolveCategory(params: PageProps<"/[lang]/c/[slug]">["params"]) {
   const { slug } = await params;
@@ -112,14 +110,7 @@ export default async function CategoryPage({ params, searchParams }: PageProps<"
         <h2 className="mb-4 text-xl font-extrabold text-navy-900">
           {interpolate(dict.category.listingsIn, { category: name })}
         </h2>
-        <Suspense fallback={<ListingGridSkeleton label={dict.common.loading} />}>
-          <CategoryResults
-            searchParams={searchParams}
-            slug={category.slug}
-            locale={locale}
-            dict={dict}
-          />
-        </Suspense>
+        <CategoryResults searchParams={searchParams} slug={category.slug} locale={locale} dict={dict} />
       </Container>
     </>
   );

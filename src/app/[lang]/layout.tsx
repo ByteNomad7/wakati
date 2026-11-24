@@ -1,7 +1,6 @@
 import "@fontsource-variable/manrope";
 import "../globals.css";
 import type { Metadata, Viewport } from "next";
-import { cacheLife } from "next/cache";
 import { locales } from "@/i18n/config";
 import { getDictionary, getLocale } from "@/i18n/server";
 import { getCatalog } from "@/lib/data/queries";
@@ -32,15 +31,10 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-async function currentYear() {
-  "use cache";
-  cacheLife("days");
-  return new Date().getUTCFullYear();
-}
-
 export default async function RootLayout({ children }: LayoutProps<"/[lang]">) {
   const locale = await getLocale();
-  const [dict, catalog, year] = await Promise.all([getDictionary(locale), getCatalog(), currentYear()]);
+  const [dict, catalog] = await Promise.all([getDictionary(locale), getCatalog()]);
+  const year = new Date().getUTCFullYear();
 
   return (
     <html lang={locale} className="h-full antialiased">

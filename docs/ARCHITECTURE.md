@@ -4,7 +4,7 @@
 
 | Concern | Choice | Notes |
 | --- | --- | --- |
-| Framework | Next.js 16.4 (App Router), React 19, TypeScript (strict) | Cache Components + Partial Prefetching enabled (framework defaults) |
+| Framework | Next.js 16.4 (App Router), React 19, TypeScript (strict) | Cache Components **off**: it is not reliable on Cloudflare Workers yet (see docs/CLOUDFLARE.md) |
 | Styling | Tailwind CSS 4 with brand tokens in `src/app/globals.css` | Tokens mirrored in `src/lib/brand/tokens.ts`; a test keeps them in sync |
 | Font | Manrope, self-hosted (`@fontsource-variable/manrope`) | No request to Google Fonts |
 | Data | Supabase PostgreSQL + RLS (`supabase/migrations`) | Optional in Phase A; reference fallback when not configured |
@@ -63,9 +63,19 @@ tests/                      Unit, component and database (RLS) tests
 - `referenceRepository` is used when Supabase env vars are missing. It returns the launch
   categories/locations and **zero listings**. It never fabricates activity.
 
-`src/lib/data/queries.ts` wraps the repository in `"use cache"` functions with explicit
-`cacheLife` and `cacheTag("catalog" | "listings")`. Phase B mutations should call
-`updateTag()` with these tags after writes.
+`src/lib/data/queries.ts` applies the caching policy:
+
+- **Listings: never cached.** Every request reads published listings from Supabase, so
+  new, edited, archived or removed listings are reflected immediately. Phase B writes need
+  no cache invalidation.
+- **Reference data** (categories, regions, cities): in-memory TTL cache, 5 minutes per
+  Worker instance (`src/lib/data/ttl-cache.ts`). It shares in-flight loads, never caches
+  failures, and never serves past the TTL. Admin edits appear within 5 minutes;
+  `invalidateCatalog()` clears the current instance's copy.
+- React `cache()` deduplicates identical calls within one request.
+
+This deliberately avoids the Next.js data cache and Cache Components, which failed on
+deployed Cloudflare Workers.
 
 ## Categories
 
@@ -105,11 +115,14 @@ PGlite with a minimal Supabase shim (`tests/support/supabase-shim.sql`).
 
 ## Rendering and performance
 
-- Pages are prerendered for both locales. Data cached with `cacheLife("minutes")` (latest,
-  featured and search listings) is revalidated in the background: a newly published listing
-  appears on the homepage within about a minute. Phase B listing writes must call
-  `updateTag("listings")` so changes show immediately. Request-specific parts (search
-  parameters) stream in behind `<Suspense>` with skeletons.
+- **Live-data pages render on every request** (`dynamic = "force-dynamic"`): home, category
+  and search. They are sent with `Cache-Control: private, no-store`, so no CDN or browser
+  can serve a stale copy. Results are part of the response, not streamed separately, so a
+  failure produces a visible error (HTTP 500 / error page) instead of a missing section.
+  There is no route-level `loading.tsx`, for the same reason: it would commit HTTP 200
+  before the page could return 404 or 500.
+- **Static pages are prerendered** for both locales (legal, placeholders, auth confirmed)
+  and served from the cache.
 - Search is a plain GET form: it works without JavaScript. Client JS is limited to the
   mobile menu and the language switcher.
 - Images: AVIF/WebP via `next/image`, remote pattern limited to the project's Supabase
@@ -117,7 +130,6 @@ PGlite with a minimal Supabase shim (`tests/support/supabase-shim.sql`).
 
 ## Known limitations
 
-- An unknown category or legal slug renders the localized 404 page with `noindex`, but with
-  HTTP 200 (the streamed shell has already started). Revisit in Phase C SEO hardening.
+- (Resolved) Unknown category and legal slugs return HTTP 404 with the localized 404 page.
 - The header city selector appears on very wide screens (≥1536px). On smaller screens city
   selection is in the hero and search-page forms.

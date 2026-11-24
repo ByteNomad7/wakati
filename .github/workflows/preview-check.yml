@@ -1,7 +1,8 @@
 name: Check Cloudflare development preview
 
 # Manual: verifies a DEPLOYED development preview (main or a branch Preview) end to end:
-# EN/FR pages, noindex, preview banner, Supabase auth callback, and parallel requests.
+# EN/FR pages, noindex, preview banner, Supabase auth callback, parallel requests, and a
+# CPU-limit probe (sequential requests to dynamic pages; fails on error 1102 or 5xx).
 # Uses a Cloudflare Access service token, so the preview stays private.
 on:
   workflow_dispatch:
@@ -51,7 +52,18 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Deployment checks
+        id: platform
         run: node scripts/ci/app-smoke.mjs platform
+      - name: Repeated dynamic requests (sections present; no 5xx or 1102)
+        if: always()
+        run: node scripts/ci/app-smoke.mjs load
+      - name: Live data freshness (created/archived after deployment)
+        if: always()
+        env:
+          SMOKE_MARKER: fresh${{ github.run_id }}
+        run: node scripts/ci/app-smoke.mjs fresh
       - name: Remove test users
         if: always()
-        run: node scripts/ci/app-smoke.mjs cleanup || true
+        run: |
+          node scripts/ci/app-smoke.mjs cleanup || true
+          SMOKE_MARKER=fresh${{ github.run_id }} node scripts/ci/app-smoke.mjs cleanup || true

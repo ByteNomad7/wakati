@@ -31,8 +31,8 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  cacheComponents: true,
-  partialPrefetching: true,
+  // Cache Components is intentionally OFF: on Cloudflare Workers (OpenNext) it caused
+  // HTTP 500s and missing streamed sections on deployed Workers. See docs/CLOUDFLARE.md.
   poweredByHeader: false,
   images: {
     // Modern formats keep pages light on mobile connections.

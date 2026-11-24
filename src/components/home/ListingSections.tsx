@@ -12,7 +12,7 @@ import Link from "next/link";
 export async function LatestListings({ locale, dict }: { locale: Locale; dict: Dictionary }) {
   const listings = await getLatestListings(8);
   return (
-    <section aria-labelledby="latest-listings" className="py-12 sm:py-16">
+    <section aria-labelledby="latest-listings" data-section="latest-listings" data-count={listings.length} className="py-12 sm:py-16">
       <Container>
         <SectionHeading
           id="latest-listings"
