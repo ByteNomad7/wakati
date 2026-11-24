@@ -33,6 +33,14 @@ Build:
       neighbourhood, contact preference + consent, draft → preview → publish.
 - [ ] Photo uploads: client-side downscale, server-side re-encode to WebP, size/MIME checks,
       EXIF/location stripping, `listing_images` rows.
+      **Review note (PR #2):** storage policies currently let a signed-in user upload directly
+      into their own folder, which would keep EXIF/GPS data. Route uploads through a server
+      action that strips metadata (or upload to a private staging bucket and re-encode),
+      then tighten the `listing-images` insert policy accordingly. Buckets are public, so a
+      draft's photos are reachable by anyone who knows the (unguessable) URL.
+- [ ] Seller type: users can set `profiles.seller_type = 'business'` themselves. Only show a
+      business label as verified when `business_verification = 'verified'` (set by staff
+      tooling only). Never invent badges.
 - [ ] Listing detail page `/[lang]/l/[slug]`: gallery, details, seller card, contact reveal
       via `reveal_listing_contact()` with WhatsApp deep link, save, share, report entry point,
       related listings, `Product`/`Offer` structured data. Make `ListingCard` link to it.

@@ -58,7 +58,7 @@ tests/                      Unit, component and database (RLS) tests
 
 `MarketplaceRepository` (`src/lib/data/repository.ts`) is the only way pages read data:
 
-- `createSupabaseRepository()` reads through the anon key, so RLS applies. Listings are read
+- `createSupabaseRepository()` reads with the publishable key (Postgres role `anon`), so RLS applies. Listings are read
   from the `public_listing_cards` view (published, non-expired, no private columns).
 - `referenceRepository` is used when Supabase env vars are missing. It returns the launch
   categories/locations and **zero listings**. It never fabricates activity.
