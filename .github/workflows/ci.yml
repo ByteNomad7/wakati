@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+  SUPABASE_TELEMETRY_DISABLED: "1"
+
+jobs:
+  checks:
+    name: Lint, types, tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Type check
+        run: npm run typecheck
+      - name: Unit, component and database (PGlite) tests
+        run: npm test
+      - name: Production build (no backend configured)
+        run: npm run build
+
+  supabase-local:
+    name: Real Supabase stack (auth, RLS, storage, app)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Start Supabase (applies migrations and seed.sql)
+        run: npx supabase start -x realtime,studio,edge-runtime,logflare,vector,imgproxy,supavisor,postgres-meta
+      - name: Export local API URL and keys
+        run: node scripts/ci/supabase-env.mjs
+      - name: Lint database schema (plpgsql_check)
+        run: npx supabase db lint --level error --fail-on error
+      - name: Re-apply seed (must be idempotent)
+        run: |
+          DB_URL=$(npx supabase status -o env | sed -n 's/^DB_URL="\(.*\)"$/\1/p')
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f supabase/seed.sql
+          psql "$DB_URL" -tA -c "select count(*) from public.categories" | grep -qx 35
+      - name: Integration tests (email/password auth, RLS, storage)
+        run: npm run test:integration
+      - name: Seed a smoke-test listing (before building, so prerendering sees live data)
+        env:
+          SMOKE_MARKER: smoke${{ github.run_id }}
+        run: node scripts/ci/app-smoke.mjs seed
+      - name: Build the app against the local Supabase
+        run: npm run build
+      - name: Smoke test the production server with live data
+        env:
+          SMOKE_MARKER: smoke${{ github.run_id }}
+          APP_URL: http://localhost:3000
+        run: |
+          npx next start -p 3000 > next.log 2>&1 &
+          for i in $(seq 1 30); do curl -fsS -o /dev/null http://localhost:3000/en && break; sleep 1; done
+          node scripts/ci/app-smoke.mjs check || (tail -n 50 next.log; exit 1)
+      - name: Remove smoke-test data
+        if: always()
+        env:
+          SMOKE_MARKER: smoke${{ github.run_id }}
+        run: node scripts/ci/app-smoke.mjs cleanup || true
+      - name: Supabase logs on failure
+        if: failure()
+        run: docker ps -a && docker logs supabase_auth_wakati --tail 80 || true
+
+  supabase-dev:
+    name: Hosted Supabase development project
+    # Runs only when the dev project's secrets exist (never for forks, never production).
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: development
+    env:
+      SUPABASE_TEST_URL: ${{ secrets.SUPABASE_DEV_URL }}
+      SUPABASE_TEST_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_DEV_PUBLISHABLE_KEY }}
+      SUPABASE_TEST_SECRET_KEY: ${{ secrets.SUPABASE_DEV_SECRET_KEY }}
+    steps:
+      - name: Check that the development project is configured
+        id: configured
+        run: |
+          if [ -n "$SUPABASE_TEST_URL" ] && [ -n "$SUPABASE_TEST_PUBLISHABLE_KEY" ] && [ -n "$SUPABASE_TEST_SECRET_KEY" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Hosted dev project secrets are not set; skipping. See docs/SUPABASE.md."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.configured.outputs.ok == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.configured.outputs.ok == 'true'
+        with:
+          node-version: 22
+          cache: npm
+      - if: steps.configured.outputs.ok == 'true'
+        run: npm ci
+      - name: Integration tests against the hosted development project
+        if: steps.configured.outputs.ok == 'true'
+        run: npm run test:integration

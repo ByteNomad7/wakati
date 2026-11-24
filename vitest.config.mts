@@ -14,6 +14,8 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/**/*.test.{ts,tsx}"],
+    // Real-backend tests have their own config (npm run test:integration).
+    exclude: ["tests/integration/**", "node_modules/**"],
     setupFiles: ["tests/support/setup.ts"],
     testTimeout: 30_000,
   },

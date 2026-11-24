@@ -60,8 +60,10 @@ export const brandAssets = {
   symbol: { src: "/brand/wakati-symbol.svg", width: 400, height: 320 },
   appIcon: { src: "/brand/wakati-app-icon-1024.png", width: 1024, height: 1024 },
   /**
-   * Slot for a light-on-dark ("reverse") horizontal logo. Not yet supplied;
-   * components fall back to the app icon on dark backgrounds until it exists.
+   * Light-on-dark lockup for navy backgrounds. Derived from the approved horizontal
+   * logo by scripts/brand/generate-derived-assets.mjs (navy fills → white only).
    */
-  horizontalReverse: null as null | { src: string; width: number; height: number },
+  horizontalReverse: { src: "/brand/wakati-horizontal-reverse.svg", width: 1150, height: 330 },
+  /** Android maskable icon master (full-bleed navy, symbol inside the safe zone). */
+  maskable: { src: "/brand/wakati-maskable.svg", width: 1024, height: 1024 },
 } as const;

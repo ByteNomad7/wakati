@@ -29,25 +29,24 @@ regions, cities) and shows honest empty states. It never shows invented listings
 | `npm run lint` | ESLint (Next.js core-web-vitals + TypeScript rules) |
 | `npm run typecheck` | Generates route types, then `tsc --noEmit` |
 | `npm test` | Unit, component and database/RLS tests (Vitest + PGlite) |
+| `npm run test:integration` | Tests against a real Supabase stack (needs `SUPABASE_TEST_*` env; run in CI) |
+| `npx supabase start` | Local Supabase stack (Docker) with migrations and seed applied |
+| `npm run brand:generate` | Regenerates derived logo/icon variants from the approved artwork |
 | `npm run db:seed:generate` | Regenerates `supabase/seed.sql` from `src/lib/reference` |
 | `npm run check` | All of the above in order |
 
 ## Database setup (Supabase)
 
-1. Create a project at supabase.com (free tier is enough; do not enable paid add-ons
-   without approval).
-2. Apply the migrations in `supabase/migrations` in order (SQL editor or `supabase db push`),
-   then run `supabase/seed.sql`.
-3. Put the project URL and anon key in `.env.local` (see `.env.example`).
-4. To make someone a moderator/admin, insert into `public.user_roles` using the SQL editor.
-
-The seed only contains reference data (categories, category fields, regions, cities).
+See [docs/SUPABASE.md](docs/SUPABASE.md) for the development project's settings, secrets and
+the migration workflow. Locally, `npx supabase start` (Docker) gives a full stack with the
+migrations and seed applied. The seed only contains reference data.
 
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md): stack, structure, i18n, data access, security model
 - [Roadmap](docs/ROADMAP.md): Phase B and C scope and prerequisites
-- [Brand assets](public/brand/README.md): official logo files, slots and colour rules
+- [Supabase](docs/SUPABASE.md): development project configuration, secrets, verification
+- [Brand assets](public/brand/README.md): official logo files, derived variants and colour rules
 
 ## Legal
 

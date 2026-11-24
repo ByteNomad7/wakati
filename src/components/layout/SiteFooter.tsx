@@ -7,7 +7,7 @@ import { localePath, routes } from "@/i18n/paths";
 import { buildCategoryTree } from "@/lib/data/category-tree";
 import type { Category } from "@/lib/data/types";
 import { publicEnv } from "@/lib/env";
-import { AppIcon } from "@/components/brand/Logo";
+import { LogoHorizontalReverse } from "@/components/brand/Logo";
 import { Container } from "@/components/ui/primitives";
 
 export function SiteFooter({
@@ -32,13 +32,8 @@ export function SiteFooter({
     <footer className="mt-auto bg-navy-900 text-white">
       <Container className="grid gap-10 py-12 md:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr_1fr]">
         <div className="max-w-sm">
-          <div className="flex items-center gap-3">
-            <AppIcon className="size-12 rounded-xl ring-1 ring-white/15" />
-            <div>
-              <p className="text-xl font-extrabold tracking-tight">Wakati</p>
-              <p className="text-sm font-semibold text-orange-500">{dict.meta.tagline}</p>
-            </div>
-          </div>
+          <LogoHorizontalReverse className="h-11 w-auto" />
+          <p className="mt-2 text-sm font-semibold text-orange-500">{dict.meta.tagline}</p>
           <p className="mt-4 text-sm leading-relaxed text-navy-100">{t.about}</p>
         </div>
 

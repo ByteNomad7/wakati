@@ -1,0 +1,65 @@
+name: Apply migrations to Supabase DEVELOPMENT
+
+# Manual only. Targets the development project; there is no production workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only show what would be applied"
+        type: boolean
+        default: true
+      include_seed:
+        description: "Also run supabase/seed.sql (idempotent reference data)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-dev-migrate
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: development
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DEV_DB_PASSWORD }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_DEV_PROJECT_REF }}
+      SUPABASE_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Require development secrets
+        run: |
+          for v in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD SUPABASE_PROJECT_REF; do
+            [ -n "${!v}" ] || { echo "::error::$v is not set in the 'development' environment"; exit 1; }
+          done
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Link the development project
+        run: npx supabase link --project-ref "$SUPABASE_PROJECT_REF"
+      - name: Applied vs pending migrations
+        run: npx supabase migration list --remote --password "$SUPABASE_DB_PASSWORD"
+      - name: Schema snapshot before changes (for rollback)
+        # SCHEMA ONLY. This repository is public, so workflow artifacts must never
+        # contain table data. Take data backups locally (see docs/SUPABASE.md).
+        run: npx supabase db dump --remote --password "$SUPABASE_DB_PASSWORD" --schema public -f pre-migration-schema.sql
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pre-migration-schema-${{ github.run_id }}
+          path: pre-migration-schema.sql
+          retention-days: 14
+      - name: Pending migrations (dry run)
+        run: npx supabase db push --remote --dry-run ${{ inputs.include_seed && '--include-seed' || '' }} --password "$SUPABASE_DB_PASSWORD"
+      - name: Apply migrations
+        if: ${{ !inputs.dry_run }}
+        run: npx supabase db push --remote --yes ${{ inputs.include_seed && '--include-seed' || '' }} --password "$SUPABASE_DB_PASSWORD"
+      - name: Migrations after apply
+        if: ${{ !inputs.dry_run }}
+        run: npx supabase migration list --remote --password "$SUPABASE_DB_PASSWORD"

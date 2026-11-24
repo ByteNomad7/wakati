@@ -12,14 +12,9 @@ export async function createTestDatabase(): Promise<PGlite> {
   for (const file of readdirSync(dir).filter((f) => f.endsWith(".sql")).sort()) {
     await db.exec(readFileSync(join(dir, file), "utf8"));
   }
-  // Supabase grants table privileges to the API roles by default; RLS then decides.
-  await db.exec(`
-    grant select, insert, update, delete on all tables in schema public to anon, authenticated, service_role;
-    grant usage, select on all sequences in schema public to anon, authenticated, service_role;
-    grant select, insert, update, delete on all tables in schema storage to anon, authenticated, service_role;
-  `);
-  // Re-apply the migration's explicit revokes that the blanket grant above overrides.
-  await db.exec(`revoke insert, update, delete on public.contact_reveals from anon, authenticated;`);
+  // Only storage needs blanket grants here (Supabase manages that schema). Public-schema
+  // privileges come exclusively from the migrations, so missing grants fail the tests.
+  await db.exec(`grant select, insert, update, delete on all tables in schema storage to anon, authenticated, service_role;`);
   await db.exec(readFileSync(join(root, "supabase/seed.sql"), "utf8"));
   return db;
 }
@@ -39,9 +34,13 @@ export async function as<T>(
   });
 }
 
-export async function createUser(db: PGlite, id: string, displayName: string) {
-  await db.query(`insert into auth.users (id, email) values ($1, $2)`, [id, `${id}@example.test`]);
-  await db.query(`insert into public.profiles (id, display_name) values ($1, $2)`, [id, displayName]);
+/** Inserts an auth user; the sign-up trigger creates the profile and settings rows. */
+export async function createUser(db: PGlite, id: string, displayName: string, preferredLanguage = "en") {
+  await db.query(`insert into auth.users (id, email, raw_user_meta_data) values ($1, $2, $3)`, [
+    id,
+    `${id}@example.test`,
+    JSON.stringify({ display_name: displayName, preferred_language: preferredLanguage }),
+  ]);
 }
 
 export async function idOf(db: PGlite, table: "categories" | "cities", slug: string): Promise<string> {
