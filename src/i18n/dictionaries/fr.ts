@@ -162,6 +162,15 @@ const fr: Dictionary = {
     body: "Cette partie de Wakati est en cours de développement et n'est pas encore disponible. En attendant, vous pouvez parcourir les catégories et effectuer des recherches.",
     backHome: "Retour à l'accueil",
   },
+  auth: {
+    confirmedTitle: "Adresse e-mail confirmée",
+    confirmedBody: "Merci. Votre adresse e-mail est confirmée et vous êtes connecté.",
+    errorTitle: "Ce lien n'a pas fonctionné",
+    invalidBody: "Le lien est invalide ou a déjà été utilisé. Veuillez en demander un nouveau.",
+    expiredBody: "Le lien a expiré. Les liens sont valables une heure. Veuillez en demander un nouveau.",
+    unavailableBody: "La connexion n'est pas disponible pour le moment. Veuillez réessayer plus tard.",
+    continue: "Continuer sur Wakati",
+  },
   legal: {
     draftBanner: "Projet – en attente de validation juridique",
     draftBody:
@@ -216,6 +225,7 @@ const fr: Dictionary = {
   },
   errors: errorMessages.fr,
   common: {
+    previewBanner: "Aperçu de développement · données de test uniquement · non public",
     loading: "Chargement…",
     devDataNotice:
       "Avis de développement : la base de données des annonces n'est pas connectée (variables d'environnement Supabase manquantes). Seules les données de référence sont affichées.",

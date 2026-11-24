@@ -1,7 +1,11 @@
 import type { MetadataRoute } from "next";
-import { siteUrl } from "@/lib/env";
+import { indexingAllowed, siteUrl } from "@/lib/env";
 
 export default function robots(): MetadataRoute.Robots {
+  if (!indexingAllowed()) {
+    // Local, CI and development previews must never be crawled.
+    return { rules: [{ userAgent: "*", disallow: "/" }] };
+  }
   return {
     rules: [
       {

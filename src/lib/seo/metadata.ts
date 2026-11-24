@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { defaultLocale, localeTags, locales, type Locale } from "@/i18n/config";
 import { localePath } from "@/i18n/paths";
-import { siteUrl } from "@/lib/env";
+import { indexingAllowed, siteUrl } from "@/lib/env";
 
 /** Canonical + hreflang alternates for a locale-independent path such as "/c/cars". */
 export function alternatesFor(locale: Locale, path: string): Metadata["alternates"] {
@@ -32,7 +32,10 @@ export function pageMetadata({
     title,
     description,
     alternates: alternatesFor(locale, path),
-    robots: index ? { index: true, follow: true } : { index: false, follow: true },
+    robots:
+      index && indexingAllowed()
+        ? { index: true, follow: true }
+        : { index: false, follow: indexingAllowed() },
     openGraph: {
       title,
       description,

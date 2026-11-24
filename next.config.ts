@@ -19,7 +19,11 @@ function supabaseImagePatterns(): NonNullable<NextConfig["images"]>["remotePatte
   }
 }
 
+// Anything that is not an explicit production deployment is kept out of search engines.
+const indexingAllowed = process.env.NEXT_PUBLIC_DEPLOYMENT_ENV === "production";
+
 const securityHeaders = [
+  ...(indexingAllowed ? [] : [{ key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" }]),
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "X-Frame-Options", value: "DENY" },
