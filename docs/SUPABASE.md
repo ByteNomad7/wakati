@@ -203,10 +203,12 @@ select id, 'admin' from auth.users where email = 'you@example.com';
 The integration tests create users with addresses like
 `wakati.ci+<name>.<run>@example.com` and delete them (and their listings and uploads) at
 the end of each run. They create confirmed users through the admin API, so no email is sent
-for those. The sign-up test calls the public sign-up endpoint once per run. Hosted projects
-refuse the reserved `example.com` test domain (`email_address_invalid`) and, without custom
-SMTP, any non-team address (`email_address_not_authorized`). In that case the test creates
-the same unconfirmed user through the admin API, so CI never sends real email. The public
-sign-up endpoint is still exercised on every pull request against the local Supabase stack. If a run is cancelled
+for those. Against the hosted project the tests **never send email**: hosted Supabase
+rejects the reserved `example.com` domain, its built-in email allows only 2 messages per hour,
+and that budget is needed for manual testing. The sign-up test there creates the same
+unconfirmed user through the admin API. The public sign-up endpoint (with a real
+confirmation email to the local mail catcher) is tested on every pull request against the
+local Supabase stack (`SUPABASE_TEST_PUBLIC_SIGNUP=1`).
+If a run is cancelled
 midway, leftover `wakati.ci+…@example.com` users can be deleted under Authentication →
 Users.

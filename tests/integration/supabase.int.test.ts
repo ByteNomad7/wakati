@@ -15,6 +15,8 @@ const url = process.env.SUPABASE_TEST_URL;
 const anonKey = process.env.SUPABASE_TEST_PUBLISHABLE_KEY;
 const serviceKey = process.env.SUPABASE_TEST_SECRET_KEY;
 const configured = Boolean(url && anonKey && serviceKey);
+/** Call the public sign-up endpoint (sends email). Enabled only for the local stack in CI. */
+const publicSignup = process.env.SUPABASE_TEST_PUBLIC_SIGNUP === "1";
 
 const runId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const password = `Wakati-test-${runId}-9`;
@@ -86,22 +88,21 @@ describe.skipIf(!configured)("Supabase backend", () => {
   describe("email/password authentication", () => {
     it("signs up with email + password and requires email confirmation", async () => {
       const metadata = { display_name: "Signup CI", preferred_language: "fr" };
-      const { data, error } = await anon.auth.signUp({ email: email("signup"), password, options: { data: metadata } });
-      if (error?.code === "email_address_not_authorized" || error?.code === "email_address_invalid") {
-        // Hosted projects refuse the reserved test domain (example.com), and without
-        // custom SMTP only send to team members. Sending real email from CI is not
-        // acceptable, so create the same unconfirmed user via the admin API instead.
-        // The public sign-up endpoint itself is exercised on every PR against the
-        // local Supabase stack (supabase-local CI job).
-        console.info(`Public sign-up refused by this project (${error.code}); using the admin API.`);
-        const created = await admin.auth.admin.createUser({ email: email("signup"), password, user_metadata: metadata });
-        expect(created.error).toBeNull();
-        signupId = created.data.user!.id;
-      } else {
+      if (publicSignup) {
+        // Local stack only: the real public sign-up endpoint (sends a confirmation email
+        // to the local mail catcher).
+        const { data, error } = await anon.auth.signUp({ email: email("signup"), password, options: { data: metadata } });
         expect(error).toBeNull();
         expect(data.user?.id).toBeTruthy();
         expect(data.session).toBeNull(); // confirmation pending
         signupId = data.user!.id;
+      } else {
+        // Hosted projects: never send email from CI. Hosted Supabase rejects the reserved
+        // example.com domain, its built-in email allows only 2 messages per hour, and that
+        // budget is needed for manual testing. Create the same unconfirmed user instead.
+        const created = await admin.auth.admin.createUser({ email: email("signup"), password, user_metadata: metadata });
+        expect(created.error).toBeNull();
+        signupId = created.data.user!.id;
       }
 
       const early = await client().auth.signInWithPassword({ email: email("signup"), password });
