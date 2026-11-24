@@ -4,10 +4,23 @@ import { PGlite, type Transaction } from "@electric-sql/pglite";
 
 const root = join(import.meta.dirname, "..", "..");
 
-/** Fresh in-memory database with the shim, all migrations and the seed applied. */
-export async function createTestDatabase(): Promise<PGlite> {
+/**
+ * Fresh in-memory database with the shim, all migrations and the seed applied.
+ *
+ * `hostedDefaults: true` emulates a hosted Supabase project with "automatically
+ * expose new tables" ON: every new public table, sequence and function is granted
+ * to anon/authenticated by default privileges before the migrations run.
+ */
+export async function createTestDatabase(options: { hostedDefaults?: boolean } = {}): Promise<PGlite> {
   const db = await PGlite.create();
   await db.exec(readFileSync(join(root, "tests/support/supabase-shim.sql"), "utf8"));
+  if (options.hostedDefaults) {
+    await db.exec(`
+      alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+      alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
+      alter default privileges in schema public grant execute on functions to anon, authenticated, service_role;
+    `);
+  }
   const dir = join(root, "supabase/migrations");
   for (const file of readdirSync(dir).filter((f) => f.endsWith(".sql")).sort()) {
     await db.exec(readFileSync(join(dir, file), "utf8"));
