@@ -87,9 +87,13 @@ describe.skipIf(!configured)("Supabase backend", () => {
     it("signs up with email + password and requires email confirmation", async () => {
       const metadata = { display_name: "Signup CI", preferred_language: "fr" };
       const { data, error } = await anon.auth.signUp({ email: email("signup"), password, options: { data: metadata } });
-      if (error?.code === "email_address_not_authorized") {
-        // Hosted project still on Supabase's built-in email, which only sends to team
-        // members. Create the same unconfirmed user via the admin API instead (no email).
+      if (error?.code === "email_address_not_authorized" || error?.code === "email_address_invalid") {
+        // Hosted projects refuse the reserved test domain (example.com), and without
+        // custom SMTP only send to team members. Sending real email from CI is not
+        // acceptable, so create the same unconfirmed user via the admin API instead.
+        // The public sign-up endpoint itself is exercised on every PR against the
+        // local Supabase stack (supabase-local CI job).
+        console.info(`Public sign-up refused by this project (${error.code}); using the admin API.`);
         const created = await admin.auth.admin.createUser({ email: email("signup"), password, user_metadata: metadata });
         expect(created.error).toBeNull();
         signupId = created.data.user!.id;
