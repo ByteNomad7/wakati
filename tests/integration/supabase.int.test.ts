@@ -10,6 +10,7 @@
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createSupabaseRepository } from "@/lib/data/supabase-repository";
 
 const url = process.env.SUPABASE_TEST_URL;
 const anonKey = process.env.SUPABASE_TEST_PUBLISHABLE_KEY;
@@ -248,6 +249,16 @@ describe.skipIf(!configured)("Supabase backend", () => {
         .from("listing_images")
         .insert({ listing_id: published, storage_path: `${aliceId}/${published}/${runId}.webp` });
       expect(own.error).toBeNull();
+    });
+
+    it("app search returns an empty page with the real total for pages beyond the last", async () => {
+      const repo = createSupabaseRepository(anon);
+      const first = await repo.searchListings({ q: runId, sort: "newest", page: 1 }, 24);
+      expect(first.total).toBeGreaterThan(0);
+      const beyond = await repo.searchListings({ q: runId, sort: "newest", page: 999 }, 24);
+      expect(beyond.items).toEqual([]);
+      expect(beyond.total).toBe(first.total);
+      expect(beyond.page).toBe(999);
     });
 
     it("does not allow anonymous writes", async () => {
