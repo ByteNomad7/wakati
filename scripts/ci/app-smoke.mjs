@@ -5,8 +5,11 @@
  *   node scripts/ci/app-smoke.mjs seed       # create a test seller + published listing (before building)
  *   node scripts/ci/app-smoke.mjs check      # live listing data renders (needs `seed` before the build)
  *   node scripts/ci/app-smoke.mjs platform   # works on ANY deployment, incl. the Cloudflare preview:
- *                                            #   pages in EN/FR, noindex, preview banner, auth callback,
- *                                            #   and a concurrency check for hanging requests
+ *                                            #   pages in EN/FR, required sections present, real 404s,
+ *                                            #   noindex, preview banner, auth callback, concurrency
+ *   node scripts/ci/app-smoke.mjs fresh      # data created/archived AFTER the deployment shows up /
+ *                                            #   disappears immediately (no stale cache), EN/FR
+ *   node scripts/ci/app-smoke.mjs load       # CPU-limit probe: sequential requests to dynamic pages
  *   node scripts/ci/app-smoke.mjs cleanup    # delete the test users (cascades to listings)
  *
  * Env:
@@ -57,9 +60,23 @@ function finish(success) {
   console.log(success);
 }
 
+/** Sections that must be present in every response for live-data pages. */
+const requiredSections = {
+  home: 'data-section="latest-listings"',
+  results: 'data-section="listing-results"',
+};
+
+function sectionFor(path) {
+  if (/^\/(en|fr)(\?|$)/.test(path)) return requiredSections.home;
+  if (/^\/(en|fr)\/(search|c\/)/.test(path)) return requiredSections.results;
+  return null;
+}
+
 async function expectPage(path, needles = [], forbidden = []) {
   const { status, html, headers } = await request(path);
   if (status !== 200) fail(`${path}: HTTP ${status}`);
+  const section = sectionFor(path);
+  if (section && !html.includes(section)) fail(`${path}: required section ${section} missing`);
   for (const n of needles) if (!html.includes(n)) fail(`${path}: missing "${n}"`);
   for (const n of forbidden) if (html.includes(n)) fail(`${path}: unexpected "${n}"`);
   console.log(`${path} → ${status}`);
@@ -119,6 +136,12 @@ async function platform() {
   await expectPage("/fr/c/vehicles", ["Voitures"]);
   await expectPage("/en/search?q=generator&city=bamenda", ["in Bamenda"]);
   await expectPage("/en/legal/terms", ["Draft – pending legal review"]);
+  await expectPage("/fr/c/home-garden", []);
+  const missing = await request("/en/c/this-category-does-not-exist");
+  if (missing.status !== 404) fail(`unknown category: expected HTTP 404, got ${missing.status}`);
+  if (!missing.html.includes("Page not found")) fail("unknown category: localized 404 page not shown");
+  const cacheControl = home.headers.get("cache-control") ?? "";
+  if (!/no-store|private|max-age=0/.test(cacheControl)) fail(`/en: live-data page is publicly cacheable (${cacheControl})`);
   const root = await request("/", { redirect: "manual" });
   if (![307, 308].includes(root.status) || !/\/(en|fr)$/.test(root.headers.get("location") ?? "")) {
     fail(`/: expected a locale redirect, got ${root.status} ${root.headers.get("location")}`);
@@ -179,6 +202,60 @@ async function platform() {
   finish("Deployment checks passed.");
 }
 
+/**
+ * CPU-limit probe for the Workers Free plan (10 ms CPU per request). Sends sequential
+ * requests to the pages that render request-specific content and fails on any error
+ * response, including Cloudflare error 1102 ("Worker exceeded resource limits").
+ */
+async function load() {
+  const rounds = Number(process.env.LOAD_ROUNDS ?? 15);
+  const paths = ["/en/search?q=moto&city=douala", "/fr/c/vehicles", "/en/c/property?page=2", "/fr/auth/error?reason=invalid", "/en"];
+  for (const path of paths) {
+    const statuses = {};
+    const times = [];
+    for (let i = 0; i < rounds; i++) {
+      const started = Date.now();
+      try {
+        const { status, html } = await request(`${path}${path.includes("?") ? "&" : "?"}probe=${i}`, { timeoutMs: 15_000 });
+        times.push(Date.now() - started);
+        const section = sectionFor(path);
+        const key = /error code:? 1102|exceeded resource limits/i.test(html)
+          ? "1102"
+          : status === 200 && section && !html.includes(section)
+            ? "missing-section"
+            : String(status);
+        statuses[key] = (statuses[key] ?? 0) + 1;
+      } catch {
+        statuses.timeout = (statuses.timeout ?? 0) + 1;
+      }
+    }
+    times.sort((a, b) => a - b);
+    const p50 = times[Math.floor(times.length / 2)] ?? 0;
+    const p95 = times[Math.floor(times.length * 0.95)] ?? 0;
+    console.log(`${path.padEnd(34)} ${JSON.stringify(statuses)} p50=${p50}ms p95=${p95}ms`);
+    const bad = Object.entries(statuses).filter(([k]) => k !== "200");
+    if (bad.length) fail(`${path}: ${JSON.stringify(Object.fromEntries(bad))} of ${rounds}`);
+  }
+  finish(`Repeated-request probe passed (${rounds} sequential requests per page: all 200, sections present, no 1102).`);
+}
+
+/**
+ * Freshness on a running deployment, without rebuilding: a listing created after the
+ * deployment must appear immediately, and must disappear immediately once archived.
+ */
+async function fresh() {
+  await seed();
+  const pages = ["/en", "/fr", `/en/search?q=${marker}`, `/fr/search?q=${marker}&city=bamenda`, "/en/c/home-garden", "/fr/c/appliances"];
+  for (const path of pages) await expectPage(path, [title]);
+  console.log("new listing visible immediately → ok");
+
+  const { error } = await admin.from("listings").update({ status: "archived" }).eq("slug", `smoke-${marker}`);
+  if (error) throw error;
+  for (const path of ["/en", `/en/search?q=${marker}`, "/fr/c/appliances"]) await expectPage(path, [], [title]);
+  console.log("archived listing removed immediately → ok");
+  finish("Live data is fresh on every request.");
+}
+
 async function cleanup() {
   for (const email of [sellerEmail, authEmail]) {
     const user = await findUser(email);
@@ -187,9 +264,9 @@ async function cleanup() {
   console.log("Deleted smoke-test users (and their listings).");
 }
 
-const commands = { seed, check, platform, cleanup };
+const commands = { seed, check, platform, load, fresh, cleanup };
 if (!commands[command]) {
-  console.error("Usage: app-smoke.mjs seed|check|platform|cleanup");
+  console.error("Usage: app-smoke.mjs seed|check|platform|load|fresh|cleanup");
   process.exit(1);
 }
 await commands[command]();
