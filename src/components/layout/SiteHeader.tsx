@@ -35,12 +35,22 @@ export function SiteHeader({ locale, dict, categories, cities, regions }: Props)
         {t.skipToContent}
       </a>
 
-      <Container className="flex h-16 items-center gap-3 lg:h-[4.5rem] lg:gap-6">
-        <Link href={href(routes.home)} className="shrink-0" aria-label={`Wakati – ${t.home}`}>
+      {/*
+        One search form for every breakpoint: on mobile the grid places it on a
+        second row under the logo; from md it sits between logo and account nav.
+        Rendering it once (instead of a desktop and a mobile copy) halves the
+        header's server render cost on every request.
+      */}
+      <Container className="grid grid-cols-[auto_1fr] items-center gap-x-3 md:grid-cols-[auto_1fr_auto] lg:gap-x-6">
+        <Link
+          href={href(routes.home)}
+          className="col-start-1 row-start-1 flex h-16 shrink-0 items-center lg:h-[4.5rem]"
+          aria-label={`Wakati – ${t.home}`}
+        >
           <LogoHorizontal priority className="h-9 w-auto lg:h-10" />
         </Link>
 
-        <div className="hidden flex-1 md:block">
+        <div className="col-span-2 row-start-2 min-w-0 pb-3 md:col-span-1 md:col-start-2 md:row-start-1 md:pb-0">
           <SearchForm
             variant="header"
             locale={locale}
@@ -51,7 +61,7 @@ export function SiteHeader({ locale, dict, categories, cities, regions }: Props)
           />
         </div>
 
-        <nav aria-label={t.account} className="ml-auto flex items-center gap-1 md:ml-0 lg:gap-2">
+        <nav aria-label={t.account} className="col-start-2 row-start-1 flex items-center justify-self-end gap-1 md:col-start-3 lg:gap-2">
           <div className="hidden lg:block">
             <LanguageSwitcher current={locale} label={t.language} />
           </div>
@@ -110,17 +120,6 @@ export function SiteHeader({ locale, dict, categories, cities, regions }: Props)
             />
           </div>
         </nav>
-      </Container>
-
-      <Container className="pb-3 md:hidden">
-        <SearchForm
-          variant="header"
-          locale={locale}
-          dict={dict}
-          categories={categories}
-          cities={cities}
-          regions={regions}
-        />
       </Container>
 
       <nav aria-label={t.categories} className="border-t border-navy-100 bg-white">
