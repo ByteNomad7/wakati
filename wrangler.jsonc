@@ -1,0 +1,85 @@
+{
+  // Wakati DEVELOPMENT preview on Cloudflare Workers (OpenNext adapter).
+  // See docs/CLOUDFLARE.md. This Worker must only ever be connected to the
+  // Supabase DEVELOPMENT project. Production will be a separate Worker.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "wakati-dev",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  // URLs: wakati-dev.<account>.workers.dev (main) and
+  // <branch>-wakati-dev.<account>.workers.dev (one stable preview per branch).
+  "workers_dev": true,
+  "preview_urls": true,
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "wakati-dev"
+    }
+  ],
+  // Next.js data cache ("use cache", ISR). R2 free tier; see docs/CLOUDFLARE.md.
+  "r2_buckets": [
+    {
+      "binding": "NEXT_INC_CACHE_R2_BUCKET",
+      "bucket_name": "wakati-dev-next-cache"
+    }
+  ],
+  // Background time-based revalidation (SQLite Durable Objects, free tier).
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "NEXT_CACHE_DO_QUEUE",
+        "class_name": "DOQueueHandler"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["DOQueueHandler"]
+    }
+  ],
+  // No Cloudflare Images binding yet: listing photos arrive in Phase B, which will
+  // decide how they are optimised (see docs/CLOUDFLARE.md).
+  // Public, non-secret runtime values. Build-time NEXT_PUBLIC_* values are set
+  // in Workers Builds "Build variables" (they are inlined during `next build`).
+  "vars": {
+    "WAKATI_DEPLOY_ENV": "development-preview"
+  },
+  "observability": {
+    "enabled": true
+  },
+  // Branch / pull-request Previews (`wrangler preview`). Previews do not inherit
+  // the bindings above, so they are declared again here.
+  // - Same R2 bucket: OpenNext namespaces every cache key by build ID, so a
+  //   Preview can never read or overwrite another build's entries.
+  // - No WORKER_SELF_REFERENCE: in a Preview a service binding would call the
+  //   main development Worker. Without it, background revalidation is skipped
+  //   in Previews (each Preview deploy re-renders its pages instead).
+  "previews": {
+    "vars": {
+      "WAKATI_DEPLOY_ENV": "development-branch-preview"
+    },
+    "r2_buckets": [
+      {
+        "binding": "NEXT_INC_CACHE_R2_BUCKET",
+        "bucket_name": "wakati-dev-next-cache"
+      }
+    ],
+    "durable_objects": {
+      "bindings": [
+        {
+          "name": "NEXT_CACHE_DO_QUEUE",
+          "class_name": "DOQueueHandler"
+        }
+      ]
+    },
+    "observability": {
+      "enabled": true
+    }
+  }
+}

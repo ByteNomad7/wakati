@@ -12,3 +12,10 @@ coverage/
 supabase/.temp/
 supabase/.branches/
 supabase/.env
+
+# OpenNext / Wrangler
+.open-next/
+.wrangler/
+.dev.vars
+.dev.vars.*
+cloudflare-env.d.ts
